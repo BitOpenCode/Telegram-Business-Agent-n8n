@@ -368,7 +368,7 @@ This project is for educational purposes. Modify and use as needed.
 
 ---
 
-**Made with ❤️ for @LilBitcoinVert**
+**Made by @LilBitcoinVert**
 
 ---
 
