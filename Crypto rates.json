@@ -1,0 +1,170 @@
+{
+  "name": "Crypto rates",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "43e3090c-86eb-47f9-8e46-c461240debd1",
+      "typeVersion": 1.1,
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [
+        -176,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\nconst message = body.business_message;\nconst text = message.text.toLowerCase();\nconst chatId = message.chat.id;\nconst businessId = message.business_connection_id;\nconst messageId = message.message_id;\n\nlet mode = 'top'; \n\nif (text.includes('биткоин') || text.includes('bitcoin') || text.includes('btc')) {\n  mode = 'single';\n  var symbol = 'BTCUSDT';\n  var coinName = 'Bitcoin (BTC)';\n} else if (text.includes('эфир') || text.includes('ethereum') || text.includes('eth')) {\n  mode = 'single';\n  var symbol = 'ETHUSDT';\n  var coinName = 'Ethereum (ETH)';\n} else if (text.includes('солана') || text.includes('solana') || text.includes('sol')) {\n  mode = 'single';\n  var symbol = 'SOLUSDT';\n  var coinName = 'Solana (SOL)';\n} else if (text.includes('доги') || text.includes('dogecoin') || text.includes('doge')) {\n  mode = 'single';\n  var symbol = 'DOGEUSDT';\n  var coinName = 'Dogecoin (DOGE)';\n} else if (text.includes('тон') || text.includes('toncoin') || text.includes('ton')) {\n  mode = 'single';\n  var symbol = 'TONUSDT';\n  var coinName = 'Toncoin (TON)';\n}\n\nreturn [{\n  chat_id: chatId,\n  mode: mode,\n  symbol: symbol,\n  coin_name: coinName,\n  business_connection_id: businessId,\n  reply_to_message_id: messageId\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        48,
+        -64
+      ],
+      "id": "7e6d7c18-1a3c-4ee8-9e59-243d87c2a0a4",
+      "name": "Parse Crypto Request"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.binance.com/api/v3/ticker/24hr?symbols=[\"BTCUSDT\",\"ETHUSDT\",\"BNBUSDT\",\"XRPUSDT\",\"SOLUSDT\",\"ADAUSDT\",\"DOGEUSDT\",\"TRXUSDT\",\"LINKUSDT\",\"DOTUSDT\",\"AVAXUSDT\",\"MATICUSDT\",\"SHIBUSDT\",\"TONUSDT\",\"ATOMUSDT\",\"LTCUSDT\",\"NEARUSDT\",\"ETCUSDT\",\"FILUSDT\",\"APTUSDT\"]",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        272,
+        -64
+      ],
+      "id": "4e79e5d8-7861-484e-b7f4-461a2aec3ae0",
+      "name": "Get Binance Ticker"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst originalData = $('Parse Crypto Request').item.json;\n\nlet tickers = [];\nfor (const item of items) {\n  if (item.json && item.json.symbol) {\n    tickers.push(item.json);\n  }\n}\n\nconst topCoinsOrder = [\n  'BTC', 'ETH', 'BNB', 'XRP', 'SOL', 'ADA', 'DOGE', 'TRX', 'LINK', 'TON'\n];\n\nconst tickerMap = {};\nfor (const ticker of tickers) {\n  if (ticker && ticker.symbol) {\n    const symbol = ticker.symbol.replace('USDT', '');\n    tickerMap[symbol] = ticker;\n  }\n}\n\nconst results = [];\nfor (const coin of topCoinsOrder) {\n  if (tickerMap[coin]) {\n    const ticker = tickerMap[coin];\n    results.push({\n      name: coin,\n      price: parseFloat(ticker.lastPrice).toFixed(2),\n      change: parseFloat(ticker.priceChangePercent).toFixed(2)\n    });\n  }\n}\n\nif (results.length === 0) {\n  return [{\n    chat_id: originalData.chat_id,\n    text: \"❌ Not found.\",\n    business_connection_id: originalData.business_connection_id,\n    reply_to_message_id: originalData.reply_to_message_id\n  }];\n}\n\nlet text = `💰 *Rates (24h)*\\n\\n`;\nfor (let i = 0; i < results.length; i++) {\n  const coin = results[i];\n  const trend = coin.change >= 0 ? '📈' : '📉';\n  const changeSign = coin.change >= 0 ? '+' : '';\n  text += `${i+1}. *${coin.name}*: ${trend} ${coin.price} USDT (${changeSign}${coin.change}%)\\n`;\n}\n\nreturn [{\n  chat_id: originalData.chat_id,\n  text: text,\n  parse_mode: \"Markdown\",\n  business_connection_id: originalData.business_connection_id,\n  reply_to_message_id: originalData.reply_to_message_id\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        496,
+        -64
+      ],
+      "id": "49637a75-5bf5-4943-8d2f-9efd0b29612c",
+      "name": "Format Crypto Response"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8800811205:AAEKLbn5yJkIliXDEpJteRrCbngHgTwftf0/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        -64
+      ],
+      "id": "15425b85-af6e-4c09-a6b4-0c6b68f8b70e",
+      "name": "Send Telegram Message"
+    },
+    {
+      "parameters": {
+        "content": "## API for crypto\n\nhttps://api.binance.com/api/v3/ticker/24hr?symbols=[\"BTCUSDT\",\"ETHUSDT\",\"BNBUSDT\",\"XRPUSDT\",\"SOLUSDT\",\"ADAUSDT\",\"DOGEUSDT\",\"TRXUSDT\",\"LINKUSDT\",\"DOTUSDT\",\"AVAXUSDT\",\"MATICUSDT\",\"SHIBUSDT\",\"TONUSDT\",\"ATOMUSDT\",\"LTCUSDT\",\"NEARUSDT\",\"ETCUSDT\",\"FILUSDT\",\"APTUSDT\"]",
+        "height": 176,
+        "width": 256
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        192,
+        -144
+      ],
+      "typeVersion": 1,
+      "id": "98213212-7db9-40df-a875-0075de85082f",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## Message in Telegram \n💰 Rates (24h)\n\n1. BTC: 📉 73499.52 USDT (-0.61%)\n2. ETH: 📉 2000.85 USDT (-1.26%)\n3. BNB: 📈 708.66 USDT (+0.19%)\n4. XRP: 📉 1.33 USDT (-1.45%)\n5. SOL: 📉 81.62 USDT (-1.46%)\n6. ADA: 📉 0.23 USDT (-1.65%)\n7. DOGE: 📉 0.10 USDT (-2.11%)\n8. TRX: 📉 0.35 USDT (-0.03%)\n9. LINK: 📉 9.04 USDT (-1.95%)\n10. TON: 📈 1.87 USDT (+2.69%)",
+        "height": 320,
+        "width": 272
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        848,
+        -192
+      ],
+      "typeVersion": 1,
+      "id": "541d61f5-42b2-41cc-9a9f-838a8039310d",
+      "name": "Sticky Note1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Parse Crypto Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Crypto Request": {
+      "main": [
+        [
+          {
+            "node": "Get Binance Ticker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Binance Ticker": {
+      "main": [
+        [
+          {
+            "node": "Format Crypto Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Crypto Response": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "81c1624b-9a0b-4c16-91b4-7110b00f5611",
+  "meta": {
+    "instanceId": "148b2b278c24b3c49bc4399db7e7ce15ed94f5b1044d28401c56f6ab511f0347"
+  },
+  "id": "vJkb8BRltug2ThRv",
+  "tags": [
+    {
+      "createdAt": "2026-05-31T14:33:31.053Z",
+      "updatedAt": "2026-05-31T14:33:31.053Z",
+      "id": "EeoUQcpBgPRnqC56",
+      "name": "reddit"
+    }
+  ]
+}

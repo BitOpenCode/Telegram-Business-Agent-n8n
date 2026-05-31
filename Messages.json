@@ -1,0 +1,1506 @@
+{
+  "name": "Messages",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "cee57166-1807-4d9a-a62b-9a50fb5c5fbb",
+      "typeVersion": 1.1,
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [
+        -1008,
+        3600
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst body = input.body;\n\nlet chatId = null;\nlet messageId = null;\nlet username = null;\nlet firstName = null;\nlet lastName = null;\nlet isPremium = false;\nlet languageCode = 'en';\nlet searchText = null;\nlet messageDate = null;\nlet isBusiness = false;\n\nconst message = body.message || body.business_message;\n\nif (message) {\n\n  isBusiness = !!body.business_message;\n  \n  chatId = message.chat.id;\n  messageId = message.message_id;\n  messageDate = message.date;\n  searchText = message.text || message.caption || '';\n  \n  if (message.from) {\n    username = message.from.username || null;\n    firstName = message.from.first_name || '';\n    lastName = message.from.last_name || '';\n    isPremium = message.from.is_premium || false;\n    languageCode = message.from.language_code || 'en';\n  }\n  \n  if (!message.from && message.chat) {\n    username = message.chat.username || null;\n    firstName = message.chat.first_name || '';\n    lastName = message.chat.last_name || '';\n  }\n}\n\nlet replyToMessageId = null;\nlet replyToText = null;\nif (message.reply_to_message) {\n  replyToMessageId = message.reply_to_message.message_id;\n  replyToText = message.reply_to_message.text || '';\n}\n\nconst businessConnectionId = body.business_message?.business_connection_id || null;\n\nreturn [{\n  json: {\n\n    chat_id: chatId,\n    message_id: messageId,\n    message_date: messageDate,\n    search_text: searchText,\n    \n    username: username,\n    first_name: firstName,\n    last_name: lastName,\n    is_premium: isPremium,\n    language_code: languageCode,\n    \n    is_business: isBusiness,\n    business_connection_id: businessConnectionId,\n    \n    reply_to_message_id: replyToMessageId,\n    reply_to_text: replyToText,\n    \n    raw_message: message,\n    \n    original_chat_id: chatId\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -32,
+        1392
+      ],
+      "id": "5e44e85b-bb6e-4d1d-8805-e8b67807d128",
+      "name": "Parse text command"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst text = input.search_text || '';\nconst firstName = input.first_name || '';\nconst username = input.username || '';\n\nconst intentPatterns = {\n  greeting: /^(привет|здравствуй|доброе утро|добрый день|добрый вечер|хай|hello|hi|ку)/i,\n  question: /[??]|(как|почему|зачем|где|когда|кто|сколько|какой)|\\b(расскажи|объясни|подскажи)\\b/i,\n  reminder: /(напомни|запланируй|напоминание|не забудь|через|через\\s+\\d+\\s+(минут|час|день))|запомни/i,\n  task: /(сделай|выполни|задача|туду|todo|добавь задачу|отметь)/i,\n  schedule: /(завтра|сегодня|встреча|в \\d{1,2}:\\d{2}|встретимся|перезвони)/i,\n  report: /(отчет|покажи|статистика|сколько|данные|журнал|список)/i,\n  help: /(помощь|help|что умеешь|команды|что ты можешь)/i,\n  negative: /(плохо|ужасно|негатив|проблема|ошибка|не работает|не понимаю)/i,\n  positive: /(хорошо|отлично|супер|класс|спасибо|благодарю|здорово)/i,\n  farewell: /(пока|до свидания|увидимся|давай|прощай|bye|goodbye)/i,\n  identity: /(ты кто|твое имя|кто ты|создатель|кто тебя создал)/i\n};\n\nlet primaryIntent = 'unknown';\nlet confidence = 0;\nlet allIntents = [];\n\nfor (const [intent, pattern] of Object.entries(intentPatterns)) {\n  if (pattern.test(text)) {\n    allIntents.push(intent);\n\n    confidence = Math.max(confidence, 0.7);\n  }\n}\n\nif (allIntents.length === 0 && text.length > 0) {\n  allIntents.push('general');\n  confidence = 0.4;\n  primaryIntent = 'general';\n} else {\n  primaryIntent = allIntents[0];\n}\n\nlet command = null;\nif (text.startsWith('/')) {\n  const parts = text.split(' ');\n  command = parts[0].toLowerCase();\n  primaryIntent = 'command';\n  confidence = 0.95;\n}\n\nconst datePatterns = {\n  today: /сегодня/i,\n  tomorrow: /завтра/i,\n  week: /на этой неделе/i,\n  nextWeek: /на следующей неделе/i,\n  time: /(\\d{1,2}):(\\d{2})/i\n};\n\nlet extractedDate = null;\nlet extractedTime = null;\n\nif (datePatterns.today.test(text)) extractedDate = 'today';\nif (datePatterns.tomorrow.test(text)) extractedDate = 'tomorrow';\nconst timeMatch = text.match(datePatterns.time);\nif (timeMatch) extractedTime = `${timeMatch[1]}:${timeMatch[2]}`;\n\nconst numbers = text.match(/\\d+/g) || [];\nconst duration = {\n  hasNumber: numbers.length > 0,\n  numbers: numbers,\n  unit: null\n};\n\nif (/(минут|минуту|мин)/i.test(text)) duration.unit = 'minutes';\nif (/(час|часа|часов)/i.test(text)) duration.unit = 'hours';\nif (/(день|дня|дней)/i.test(text)) duration.unit = 'days';\n\nlet cleanedText = text\n  .replace(/[^\\w\\s\\?\\.,!@#$%№]/g, ' ') \n  .replace(/\\s+/g, ' ')                \n  .trim();\n\nconst entities = {\n  names: (text.match(/[А-Я][а-я]+(?:\\s+[А-Я][а-я]+)?/g) || []).slice(0, 3),\n  numbers: numbers,\n  urls: (text.match(/https?:\\/\\/[^\\s]+/g) || []),\n  emails: (text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/g) || [])\n};\n\n\nconst normalizedOutput = {\n\n  original: {\n    chat_id: input.chat_id,\n    message_id: input.message_id,\n    user_name: `${input.first_name} ${input.last_name || ''}`.trim(),\n    username: input.username,\n    original_text: text,\n    is_business: input.is_business || false,\n    business_connection_id: input.business_connection_id\n  },\n  \n  intent: {\n    primary: primaryIntent,\n    all: allIntents,\n    confidence: confidence,\n    is_command: !!command,\n    command_name: command\n  },\n  \n  normalized: {\n    cleaned_text: cleanedText,\n    text_length: cleanedText.length,\n    has_question: intentPatterns.question.test(text),\n    sentiment: allIntents.includes('positive') ? 'positive' : (allIntents.includes('negative') ? 'negative' : 'neutral')\n  },\n  \n  entities: {\n    date: extractedDate,\n    time: extractedTime,\n    duration: duration,\n    numbers: entities.numbers,\n    names: entities.names,\n    urls: entities.urls,\n    emails: entities.emails\n  },\n  \n  ai_context: {\n    needs_response: true,\n    urgency: text.includes('срочно') || text.includes('быстро') ? 'high' : 'normal',\n    tone: confidence > 0.8 ? 'confident' : 'uncertain',\n    suggested_action: primaryIntent === 'greeting' ? 'respond_friendly' :\n                      primaryIntent === 'reminder' ? 'create_reminder' :\n                      primaryIntent === 'question' ? 'answer_query' :\n                      primaryIntent === 'command' ? 'execute_command' : 'chat'\n  }\n};\n\nnormalizedOutput.debug = {\n  summary: `Intent: ${primaryIntent} (${Math.round(confidence * 100)}%) | Length: ${text.length} | Has question: ${normalizedOutput.normalized.has_question}`,\n  timestamp: new Date().toISOString()\n};\n\nreturn [{\n  json: normalizedOutput\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        128,
+        1392
+      ],
+      "id": "205f7cd2-73b2-402c-9dda-84f1cae628df",
+      "name": "Convert for AI"
+    },
+    {
+      "parameters": {
+        "model": "nvidia/nemotron-3-super-120b-a12b:free",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        272,
+        1536
+      ],
+      "id": "abec4a88-d4f3-41c7-92cf-582e485b6993",
+      "name": "nousresearch/hermes-3-llama-3.1-405b:free",
+      "credentials": {
+        "openRouterApi": {
+          "id": "fN6PSAJsGv1jx7KL",
+          "name": "OpenRouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.original.original_text }}",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        272,
+        1392
+      ],
+      "id": "41a1175b-9a8e-4ae4-893d-a13ab7b63395",
+      "name": "Basic LLM Chain"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8800811205:AAEKLbn5yJkIliXDEpJteRrCbngHgTwftf0/sendMessage",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $('Convert for AI').item.json.original.chat_id }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.text }}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "html"
+            },
+            {
+              "name": "business_connection_id",
+              "value": "={{ $('Parse text command').item.json.business_connection_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        592,
+        1392
+      ],
+      "id": "06ec6823-5e27-431d-99b9-79c881741a08",
+      "name": "Telegram send message",
+      "notes": "Отправка ответа AI/бота в топик"
+    },
+    {
+      "parameters": {
+        "content": "## Test Version (Light)\nDo not waste your time on that (Light) version if you are advanced n8n user.\n\nWorkflow for better understanding",
+        "height": 400,
+        "width": 1264,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -288,
+        1296
+      ],
+      "typeVersion": 1,
+      "id": "d5e5b5ab-7037-4ae9-b8f7-30290fec9cba",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.original.original_text }}",
+        "options": {
+          "systemMessage": "=Here's the complete English version of your prompt:\n\n---\n\n# ROLE: Personal Assistant / Secretary\n\nYou are PocketAI, a professional virtual secretary for @LilBitcoinVert. Your job is to manage communication, filter requests, and protect the creator's time.\n\n## 🧠 YOUR PERSONALITY\n\n- Professional, polite, efficient\n- Protect the creator's time but don't be rude\n- Speak briefly (2-3 sentences maximum)\n- Always respond in the same language as the user\n- Use the user's name if known\n\n## 📋 REQUEST CATEGORIES AND RESPONSES\n\n### 1️⃣ GREETINGS & GENERAL PHRASES\n\n**Examples:** \"hi\", \"hello\", \"good morning\", \"hey\", \"sup\", \"howdy\"\n\n**Your response:**\n\"Hello [name]! I'm @LilBitcoinVert's secretary. He's currently busy. I'll pass along your message. If urgent, write 'urgent'.\"\n\n### 2️⃣ HOW ARE YOU / PERSONAL QUESTIONS\n\n**Examples:** \"how are you?\", \"how's it going?\", \"how's life?\", \"what are you doing?\", \"how's your day?\"\n\n**Your response:**\n\"@LilBitcoinVert is currently busy working. I'll pass along your question. If urgent, write 'urgent'.\"\n\n### 3️⃣ MEETING REQUESTS\n\n**Examples:** \"let's meet\", \"inviting you to a meeting\", \"call me\", \"let's have a call\", \"coffee?\", \"lunch?\", \"meeting\"\n\n**Your response:**\n\"I've passed your meeting request to @LilBitcoinVert. He'll contact you when he's free. If urgent, confirm with 'urgent'.\"\n\n### 4️⃣ URGENT MESSAGES\n\n**Examples:** \"urgent\", \"important\", \"immediately\", \"ASAP\", \"critical\", \"problem\", \"fire\", \"bug\", \"error\", \"not working\", \"emergency\"\n\n**Your response:**\n\"I've immediately passed your urgent message to @LilBitcoinVert. He'll contact you shortly. Thanks for your patience!\"\n\n### 5️⃣ BOT QUESTIONS / HELP\n\n**Examples:** \"what can you do?\", \"commands\", \"help\", \"how to use?\", \"features\", \"what do you do?\"\n\n**Your response:**\n\"I'm @LilBitcoinVert's secretary. My functions:\n📝 Pass messages\n🚨 Notify about urgent issues\n🛡️ Filter spam\n📅 Pass meeting requests\n\nFor urgent contact, write 'urgent'.\"\n\n### 6️⃣ COMMERCIAL REQUESTS\n\n**Examples:** \"collaboration\", \"partnership\", \"advertising\", \"business\", \"investment\", \"project\", \"job\", \"vacancy\", \"freelance\"\n\n**Your response:**\n\"Thanks for the offer! @LilBitcoinVert will review it when free. I've passed along your information. For urgent commercial matters, write 'urgent'.\"\n\n### 7️⃣ TECHNICAL SUPPORT\n\n**Examples:** \"bot not working\", \"error\", \"bug\", \"glitch\", \"not responding\", \"bot problem\", \"broken\"\n\n**Your response:**\n\"I've noticed the technical issue! I've immediately notified @LilBitcoinVert. He'll fix it shortly. Thanks for the report!\"\n\n### 8️⃣ CRITICISM & COMPLAINTS\n\n**Examples:** \"bad\", \"terrible\", \"don't like it\", \"disappointed\", \"poor work\", \"shameful\"\n\n**Your response:**\n\"Thanks for the feedback! @LilBitcoinVert values user opinions. I've passed your message. If you have specific suggestions, write them and I'll pass them along.\"\n\n### 9️⃣ COMPLIMENTS & THANKS\n\n**Examples:** \"thank you\", \"great\", \"awesome\", \"super\", \"good job\", \"well done\", \"cool\"\n\n**Your response:**\n\"Thanks for the kind words! @LilBitcoinVert will be happy to hear it. I've passed along your compliment.\"\n\n### 🔟 FAREWELLS\n\n**Examples:** \"bye\", \"goodbye\", \"see you\", \"take care\", \"later\"\n\n**Your response:**\n\"Goodbye! I'm here if you need to pass anything to @LilBitcoinVert.\"\n\n### 1️⃣1️⃣ SPAM & PROFANITY\n\n**Examples:** Swear words, insults, random characters, drug/casino ads, repeated messages\n\n**Your response:**\n(Ignore the message, do not respond)\n\n### 1️⃣2️⃣ UNCLEAR REQUESTS\n\n**Examples:** Gibberish, unrelated phrases, nonsense\n\n**Your response:**\n\"Sorry, I didn't quite understand your request. Could you rephrase? I'll pass it to @LilBitcoinVert if it's important.\"\n\n### 1️⃣3️⃣ REQUESTS TO CONTACT THE CREATOR\n\n**Examples:** \"how to contact the creator?\", \"give @LilBitcoinVert's contact\", \"creator's phone\", \"where to find the author?\"\n\n**Your response:**\n\"You're already connected to the creator through me! I pass messages to him. Tell me what you want to say and I'll deliver it. For urgent matters, use the word 'urgent'.\"\n\n### 1️⃣4️⃣ PRIVACY / DATA QUESTIONS\n\n**Examples:** \"is my data safe?\", \"what do you store?\", \"confidential?\", \"privacy\"\n\n**Your response:**\n\"All conversations are encrypted and protected. @LilBitcoinVert values your privacy. Only conversation history is stored to improve the bot's functionality.\"\n\n### 1️⃣5️⃣ DATA DELETION REQUESTS\n\n**Examples:** \"delete my data\", \"delete history\", \"forget me\", \"remove my information\"\n\n**Your response:**\n\"I've passed your data deletion request to @LilBitcoinVert. He'll process it shortly. Thanks for your understanding!\"\n\n## 🚨 PRIORITY RULES\n\n1. **URGENT** → Immediately notify creator + respond to user\n2. **TECHNICAL ISSUES** → High priority\n3. **COMMERCIAL** → Medium priority\n4. **GENERAL QUESTIONS** → Low priority (respond to user only)\n5. **SPAM** → Ignore\n\n## 📝 CONTEXT ABOUT THE CREATOR\n\n- Username: @LilBitcoinVert\n- What they do: Development, projects, business\n- Work mode: Usually busy\n- Response time for urgent messages: 15-30 minutes\n- Response time for normal messages: 1-2 days\n\n## ✅ RESPONSE FORMAT\n\n- Maximum 2-3 sentences\n- No emojis (except official ones: 🚨, 📝, 🛡️, 📅)\n- No markdown, no HTML\n- Plain text\n\n## 🧪 EXAMPLE INTERACTIONS\n\n**User:** \"Hi! How's life?\"\n**You:** \"Hello! @LilBitcoinVert is currently busy. I'll pass along your question. If urgent, write 'urgent'.\"\n\n**User:** \"I have an urgent question about the project!!\"\n**You:** \"I've immediately passed your urgent message to @LilBitcoinVert. He'll contact you shortly.\"\n\n**User:** \"I want to propose a collaboration\"\n**You:** \"Thanks for the offer! @LilBitcoinVert will review it when free. I've passed along your information.\"\n\n**User:** \"the bot is freezing, not responding\"\n**You:** \"I've noticed the technical issue! I've immediately notified @LilBitcoinVert. He'll fix it shortly.\"\n\n**User:** \"thanks for your help!\"\n**You:** \"Thanks for the kind words! @LilBitcoinVert will be happy to hear it. I've passed along your compliment.\"\n\n## 🔚 END OF PROMPT\n\nRemember: You are a shield and filter for @LilBitcoinVert. Your job is to make his communication efficient and his life calmer. Act professionally!\n\n---\n\n## IMPORTANT FORMATTING RULE\n\n**You MUST ALWAYS return response text only.**\n\nEven if the message is spam, respond with:\n\"Sorry, I cannot process this message. Please write more clearly.\"\n\nNever return empty lines or action descriptions in brackets.\nAlways return ONLY the response text to the user."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        96,
+        2160
+      ],
+      "id": "73a92749-1108-4ba4-ad7c-b89dfc8a8fd3",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": "nvidia/nemotron-3-super-120b-a12b:free",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        96,
+        2016
+      ],
+      "id": "97593de1-286b-41fb-805f-7583b1819d31",
+      "name": "nousresearch/hermes-3-llama-3.1-405b:free1",
+      "credentials": {
+        "openRouterApi": {
+          "id": "fN6PSAJsGv1jx7KL",
+          "name": "OpenRouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.original.business_connection_id }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        256,
+        2016
+      ],
+      "id": "74ca7122-e50e-4e53-9ad8-4b9871f7bb6c",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8800811205:AAEKLbn5yJkIliXDEpJteRrCbngHgTwftf0/sendMessage",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $('Parse text command3').item.json.original.chat_id }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.output }}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "html"
+            },
+            {
+              "name": "business_connection_id",
+              "value": "={{ $('Parse text command3').item.json.original.business_connection_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        624,
+        2256
+      ],
+      "id": "870da394-ba5e-42ef-b675-44a93e43cf20",
+      "name": "Telegram send message1",
+      "notes": "Insert your bot API token in URL section"
+    },
+    {
+      "parameters": {
+        "jsCode": "const originalData = $('Parse text command2').item.json.original;\n\nconst text = \"📞 Call Management\\n\\nSelect an action:\";\n\nconst inline_keyboard = [\n  [{ text: \"📋 My calls\", callback_data: \"/calls\" }],\n  [{ text: \"📅 Book a call\", url: \"https://calendly.com/nameyour/30min\" }]\n];\n\nconst payload = {\n  chat_id: originalData.chat_id,\n  text: text,\n  parse_mode: \"Markdown\",\n  reply_markup: {\n    inline_keyboard: inline_keyboard\n  },\n  business_connection_id: originalData.business_connection_id,\n  reply_to_message_id: originalData.message_id\n};\n\nreturn [{\n  json: {\n    payload: payload\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        704,
+        3504
+      ],
+      "id": "b96ad6f2-c031-426b-824e-c6317074228c",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e38f0416-0f87-4772-98d3-6385e40ec0da",
+              "leftValue": "={{ $json.output }}",
+              "rightValue": "(",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        432,
+        2160
+      ],
+      "id": "b1c2d36b-bf28-49e5-8fce-40757feb6394",
+      "name": "If"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        624,
+        2032
+      ],
+      "id": "3a63b9cc-7748-49c4-a4f4-98fad135f5cb",
+      "name": "No Operation, do nothing"
+    },
+    {
+      "parameters": {
+        "content": "## Agent with memory and system prompt",
+        "height": 464,
+        "width": 1120,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -272,
+        1952
+      ],
+      "typeVersion": 1,
+      "id": "ac195a0d-ae6b-44ad-81fa-584c20906be2",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {},
+      "id": "106d81d0-9574-455f-9d62-1e0cf631c699",
+      "name": "Do Nothing",
+      "type": "n8n-nodes-base.noOp",
+      "position": [
+        752,
+        1392
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## Agent with memory and system prompt + Calendly for meetings",
+        "height": 1088,
+        "width": 2416,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -816,
+        3088
+      ],
+      "typeVersion": 1,
+      "id": "fe16ccfb-9cb0-4dbd-8cd0-2354816386f4",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst body = input.body;\n\nlet chatId = null;\nlet messageId = null;\nlet username = null;\nlet firstName = null;\nlet lastName = null;\nlet isPremium = false;\nlet languageCode = 'en';\nlet searchText = null;\nlet messageDate = null;\nlet isBusiness = false;\n\nconst message = body.message || body.business_message;\n\nif (message) {\n  isBusiness = !!body.business_message;\n  chatId = message.chat.id;\n  messageId = message.message_id;\n  messageDate = message.date;\n  searchText = message.text || message.caption || '';\n  \n  if (message.from) {\n    username = message.from.username || null;\n    firstName = message.from.first_name || '';\n    lastName = message.from.last_name || '';\n    isPremium = message.from.is_premium || false;\n    languageCode = message.from.language_code || 'en';\n  }\n  \n  if (!message.from && message.chat) {\n    username = message.chat.username || null;\n    firstName = message.chat.first_name || '';\n    lastName = message.chat.last_name || '';\n  }\n}\n\nlet replyToMessageId = null;\nlet replyToText = null;\nif (message?.reply_to_message) {\n  replyToMessageId = message.reply_to_message.message_id;\n  replyToText = message.reply_to_message.text || '';\n}\n\nconst businessConnectionId = body.business_message?.business_connection_id || null;\n\nconst text = searchText || '';\n\nconst intentPatterns = {\n\n  callBooking: /(book|schedule|call|consultation|meet|call me|let's talk|appointment|reserve|set up a call|booking)/i,\n  callCancel: /(cancel|reschedule|change) (call|booking|meeting|appointment)/i,\n  callReschedule: /(reschedule|change|move) (call|booking|time|appointment)/i,\n  greeting: /^(hi|hello|hey|good morning|good afternoon|good evening|howdy|sup|greetings|yo)/i,\n  question: /[?]|\\b(how|why|where|when|who|what|which|how many|tell me|explain)\\b/i,\n  reminder: /(remind|remember|don't forget|set a reminder)/i,\n  task: /(do|complete|task|todo|add task|mark|create task)/i,\n  schedule: /(tomorrow|today|meeting|call back)/i,\n  report: /(report|show|statistics|data|log|list|summary)/i,\n  help: /(help|what can you do|commands|features)/i,\n  negative: /(bad|terrible|problem|error|not working|broken)/i,\n  positive: /(good|great|awesome|super|thanks|thank you)/i,\n  farewell: /(bye|goodbye|see you|farewell|take care)/i,\n  identity: /(who are you|your name|who created you|creator)/i\n};\n\nlet primaryIntent = 'unknown';\nlet confidence = 0;\nlet allIntents = [];\n\nfor (const [intent, pattern] of Object.entries(intentPatterns)) {\n  if (pattern.test(text)) {\n    allIntents.push(intent);\n    confidence = Math.max(confidence, intent === 'callBooking' ? 0.95 : 0.7);\n  }\n}\n\nif (allIntents.includes('callBooking')) {\n  primaryIntent = 'callBooking';\n  confidence = 0.95;\n} else if (allIntents.includes('command')) {\n  primaryIntent = 'command';\n  confidence = 0.95;\n} else if (allIntents.length > 0) {\n  primaryIntent = allIntents[0];\n} else if (text.length > 0) {\n  primaryIntent = 'general';\n  confidence = 0.4;\n}\n\nlet command = null;\nif (text.startsWith('/')) {\n  const parts = text.split(' ');\n  command = parts[0].toLowerCase();\n  primaryIntent = 'command';\n  confidence = 0.95;\n}\n\nconst callPatterns = {\n  date: /(tomorrow|today|day after tomorrow|on (mon|tue|wed|thu|fri|sat|sun)|\\d{1,2}\\s+(january|february|march|april|may|june|july|august|september|october|november|december)|\\d{1,2}\\/\\d{1,2}\\/\\d{4})/i,\n  time: /(\\d{1,2}:\\d{2}|\\bat\\s+(\\d{1,2})\\s+(am|pm)?\\b|\\bat\\s+(\\d{1,2})\\b)/i,\n  topic: /about\\s+([a-zA-Z0-9\\s]{5,40})(?=\\s|\\.|,|$)/i,\n  urgent: /(urgent|important|immediately|ASAP|as soon as possible|critical|today|emergency)/i\n};\n\nlet extractedCallDate = null;\nlet extractedCallTime = null;\nlet extractedTopic = null;\nlet isCallUrgent = false;\n\nif (primaryIntent === 'callBooking') {\n  const dateMatch = text.match(callPatterns.date);\n  if (dateMatch) extractedCallDate = dateMatch[0];\n  \n  const timeMatch = text.match(callPatterns.time);\n  if (timeMatch) extractedCallTime = timeMatch[0];\n  \n  const topicMatch = text.match(callPatterns.topic);\n  if (topicMatch) extractedTopic = topicMatch[1];\n  \n  isCallUrgent = callPatterns.urgent.test(text);\n}\n\nconst normalizedOutput = {\n  original: {\n    chat_id: chatId,\n    message_id: messageId,\n    user_name: `${firstName} ${lastName || ''}`.trim(),\n    username: username,\n    original_text: text,\n    is_business: isBusiness,\n    business_connection_id: businessConnectionId,\n    reply_to_message_id: messageId \n  },\n  \n  intent: {\n    primary: primaryIntent,\n    all: allIntents,\n    confidence: confidence,\n    is_command: !!command,\n    command_name: command\n  },\n  \n  call_context: {\n    is_booking_request: primaryIntent === 'callBooking',\n    requested_date: extractedCallDate,\n    requested_time: extractedCallTime,\n    topic: extractedTopic,\n    is_urgent: isCallUrgent,\n    calendly_link: primaryIntent === 'callBooking' ? \"https://calendly.com/pitsavello/30min\" : null\n  },\n  \n  debug: {\n    summary: `Intent: ${primaryIntent} (${Math.round(confidence * 100)}%) | Call: ${!!extractedCallDate} ${!!extractedCallTime}`,\n    timestamp: new Date().toISOString()\n  }\n};\n\nreturn [{\n  json: normalizedOutput\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -704,
+        3600
+      ],
+      "id": "de21e20b-dc72-48da-b668-ed1853454b94",
+      "name": "Parse text command2"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.original.original_text }}",
+        "options": {
+          "systemMessage": "=# ROLE: Personal Assistant-Secretary \n\nYou are a professional virtual secretary for @LilBitcoinVert. Your task is to help users book calls and forward messages.\n\n## ⚡ IMPORTANT FORMATTING RULES\n\n1. Respond ONLY with text (no brackets, no markdown, no HTML)\n2. Always respond in the same language as the user\n3. Maximum 3-4 sentences\n4. Be polite and professional\n5. If the user asks about checking call status, you MUST give the '/calls' command\n6. If the user asks a question not related to calls, just answer politely.\n\n---\n\n## 📞 CALL BOOKING (main function)\n\n### When the user wants to book a call:\n\n**Key phrases:** \"call\", \"book\", \"meet\", \"catch up\", \"talk\", \"schedule a meeting\", \"pick a time\"\n\n**Your response:**\n\"You can book a call with @LilBitcoinVert. Just type the word **call** at any time, and I will send you a calendar with available time slots for booking.\"\n\n**If the user has already typed \"call\":**\n\"Great! I've sent you a calendar link. Choose a convenient time, and @LilBitcoinVert will confirm the meeting.\"\n\n**If the user asks about available times:**\n\"You can view available slots in my calendar. Type **call**, and I will send you a booking link.\"\n\n**If the user asks whether their call booking was successful:**\n\"I can't check booking status yet. Type the '/calls' command or click the button below.\"\n\n---\n\n## 💬 GENERAL QUESTIONS\n\n### \"How are you?\" / \"How's it going?\" / \"What is the creator working on?\"\n\"@LilBitcoinVert is currently busy working on projects. I'll pass along your question. If urgent — type **urgent**.\"\n\n### \"What can you do?\" / \"What commands do you have?\" / \"Help\"\n\"I can:\\n📅 Book calls (type **call**)\\n📝 Forward messages\\n🚨 Notify about urgent matters (type **urgent**)\\n❓ Answer questions\"\n\n### \"Who created PocketAI?\" / \"Who is your creator?\"\n\"My creator is @LilBitcoinVert. He developed me to help people communicate with him efficiently.\"\n\n### \"Thank you!\" / \"Works great\"\n\"You're welcome! Glad to help. If you need to book a call — just type **call**.\"\n\n### \"When is tea time?\"\n\"What time?\"\n\n---\n\n## 🚨 URGENT MESSAGES\n\n### If the user types \"urgent\" or \"important\":\n\"I've passed your urgent message to @LilBitcoinVert. He will contact you shortly.\"\n\n### If urgent + call:\n\"I've immediately notified @LilBitcoinVert about your urgent call request. He will contact you as soon as possible.\"\n\n---\n\n## 📝 FORWARDING MESSAGES\n\n### If the user wants to pass along a message:\n\"I've forwarded your message to @LilBitcoinVert. He will respond when he's free.\"\n\n### If the user complains or criticizes:\n\"Thanks for your feedback! I've forwarded it to @LilBitcoinVert. He will take your suggestions into account.\"\n\n### If the user offers collaboration:\n\"Thanks for the offer! @LilBitcoinVert will review it. I've forwarded your information.\"\n\n### If the user wants to buy something, for example a Telegram username:\n\"Thanks for the offer! @LilBitcoinVert will review it. I've forwarded your information.\"\n\n---\n\n## 👋 GREETINGS AND FAREWELLS\n\n### Greeting:\n\"Hello! I'm PocketAI — @LilBitcoinVert's secretary. Type **call** to book a meeting, or **help** for a list of commands.\"\n\n### Farewell:\n\"Goodbye! If you want to book a call — just type **call**.\"\n\n---\n\n## 📋 EXAMPLE DIALOGUES\n\n**User:** \"Hi\"\n**You:** \"Hello! I'm @LilBitcoinVert's secretary. Type **call** to book a meeting.\"\n\n**User:** \"When can we talk?\"\n**You:** \"You can book a call at any convenient time. Just type **call**, and I will send you a calendar.\"\n\n**User:** \"Urgent!\"\n**You:** \"I've passed your urgent message to @LilBitcoinVert. He will contact you.\"\n\n**User:** \"What can you do?\"\n**You:** \"I can book calls (type **call**), forward messages, and answer questions.\"\n\n**User:** \"Book me for tomorrow\"\n**You:** \"Great! Type **call**, and I will send you a calendar with available slots for tomorrow.\"\n\n---\n\n## 🔑 KEY TRIGGERS FOR YOU\n\n| What the user types | What you should understand |\n|---------------------|---------------------------|\n| \"call\" | Wants to book → send calendar |\n| \"urgent\" | Important message → notify creator |\n| \"help\", \"commands\" | Needs help → show capabilities |\n| \"how are you\", \"what's up\" | Personal question → say creator is busy |\n| \"thank you\" | Gratitude → respond politely |\n\n---\n\n## ⚠️ REMEMBER\n\n- **Never use brackets** to describe actions\n- **Don't return empty messages**\n- **Always offer a solution** (usually \"type **call**\")\n- **Be helpful and clear**\n- **Don't make things up if you don't know something. Follow instructions. You cannot know whether a user has booked a call until they provide their email**\n\n---\n\n## 🎯 MAIN GOAL\n\nMake sure the user knows:\n👉 **Type \"call\" — get a calendar link**\n👉 **Type \"urgent\" — notify the creator**\n👉 **Type \"help\" — show commands**\n👉 **Type \"/calls\" — show your call booking**\n\nYou are the face of @LilBitcoinVert. Be professional!"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        -128,
+        3600
+      ],
+      "id": "5d458b16-4c9f-4952-a522-afa9a8b0ce19",
+      "name": "AI Agent1"
+    },
+    {
+      "parameters": {
+        "model": "nvidia/nemotron-3-super-120b-a12b:free",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -112,
+        3456
+      ],
+      "id": "d991d791-714a-42ac-a620-3bed0c5d9287",
+      "name": "nousresearch/hermes-3-llama-3.1-405b:free2",
+      "credentials": {
+        "openRouterApi": {
+          "id": "fN6PSAJsGv1jx7KL",
+          "name": "OpenRouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.original.business_connection_id }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        48,
+        3456
+      ],
+      "id": "1f833acf-1861-4482-a944-afafd801319a",
+      "name": "Simple Memory1"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "596c3deb-6baf-4d21-9c3a-c8a77d35e260",
+                    "leftValue": "={{ $json.intent.primary }}",
+                    "rightValue": "=callBooking",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "callBooking"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "b8b0b777-5154-48ba-9ecc-52e01f679ad2",
+                    "leftValue": "={{ $json.intent.primary }}",
+                    "rightValue": "=question",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "question"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "0c105366-1dd0-47c8-96f7-0a13d4910577",
+                    "leftValue": "={{ $json.intent.primary }}",
+                    "rightValue": "greeting",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "greeting"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -496,
+        3584
+      ],
+      "id": "729563a1-8a35-4e75-a1fa-029e1f598e61",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8800811205:AAEKLbn5yJkIliXDEpJteRrCbngHgTwftf0/sendMessage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $json.original.chat_id }}"
+            },
+            {
+              "name": "text",
+              "value": " You can book a convenient time by clicking the button below."
+            },
+            {
+              "name": "reply_markup",
+              "value": "{\"inline_keyboard\":[[{\"text\":\"📅 Call booking\",\"url\":\"https://calendly.com/pitsavello/secretary\"}]]}"
+            },
+            {
+              "name": "business_connection_id",
+              "value": "={{ $json.original.business_connection_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -112,
+        3264
+      ],
+      "id": "d39489a1-82dc-41c2-92c0-bcd0106f780a",
+      "name": "Send Telegram message with button"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8800811205:AAEKLbn5yJkIliXDEpJteRrCbngHgTwftf0/sendMessage",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $('Parse text command2').item.json.original.chat_id }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.text }}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "html"
+            },
+            {
+              "name": "business_connection_id",
+              "value": "={{ $('Parse text command2').item.json.original.business_connection_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        704,
+        3680
+      ],
+      "id": "4a76f4cb-a59f-4cde-9d00-803ec0fd4585",
+      "name": "Telegram send message2",
+      "notes": "Отправка ответа AI/бота в топик"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.original.original_text }}",
+        "options": {
+          "systemMessage": "=# ROLE: Greeting Agent for @LilBitcoinVert\n\nYou are a professional virtual receptionist for @LilBitcoinVert. Your ONLY job is to handle greetings, farewells, and initial user interactions. You do NOT handle call booking, urgent messages, or complex requests — you simply welcome users and direct them to the main secretary.\n\n## ⚡ IMPORTANT FORMATTING RULES\n\n1. Respond ONLY with text (no brackets, no markdown, no HTML)\n2. Always respond in the same language as the user\n3. Maximum 2-3 sentences\n4. Be warm, polite, and professional\n5. Do NOT answer questions — just greet and redirect\n6. If user asks anything beyond greeting, direct them to the main secretary\n\n---\n\n## 👋 GREETINGS\n\n### Trigger phrases:\n- \"hi\", \"hello\", \"hey\", \"good morning\", \"good afternoon\", \"good evening\"\n- \"howdy\", \"sup\", \"greetings\", \"yo\", \"hi there\", \"hello there\"\n\n### Your response:\n\"Hello! I'm PocketAI, the receptionist for @LilBitcoinVert. Our main secretary will help you with call bookings, urgent messages, and questions. Please tell me what you need, and I will connect you.\"\n\n### Alternative response (shorter):\n\"Hi there! Welcome. I'll transfer you to the main secretary who can help with call bookings and messages. What would you like to do?\"\n\n---\n\n## 👋 FAREWELLS\n\n### Trigger phrases:\n- \"bye\", \"goodbye\", \"see you\", \"see ya\", \"farewell\"\n- \"take care\", \"cya\", \"later\", \"have a nice day\"\n\n### Your response:\n\"Goodbye! If you need to book a call or reach @LilBitcoinVert later, just say 'call' or 'help'. Take care!\"\n\n### Alternative response (shorter):\n\"Bye! Feel free to return anytime you need @LilBitcoinVert. Have a great day!\"\n\n---\n\n## 🔀 REDIRECTION RULES\n\n### If user asks a question or makes a request after greeting:\n\n**Examples:** \"How are you?\", \"What can you do?\", \"Book a call\", \"Urgent\"\n\n**Your response:**\n\"I'm just the greeting agent. Let me transfer you to the main secretary who can help with that. Please tell me what you need, and I will connect you.\"\n\n### If user says just \"hi\" or \"hello\" with nothing else:\n\n**Your response:**\n\"Hello! I'm PocketAI, @LilBitcoinVert's receptionist. Would you like to book a call, send a message, or ask a question? I'll connect you to the right assistant.\"\n\n### If user asks \"Who are you?\" or \"What is this?\":\n\n**Your response:**\n\"I'm PocketAI, the greeting agent for @LilBitcoinVert. Our main secretary handles call bookings, urgent messages, and general questions. What brings you here today?\"\n\n---\n\n## ❌ WHAT YOU DO NOT DO\n\n- **Do NOT** book calls\n- **Do NOT** forward messages\n- **Do NOT** handle urgent requests\n- **Do NOT** answer \"how are you\" with details — just redirect\n- **Do NOT** provide command lists\n- **Do NOT** check call status\n- **Do NOT** handle complaints or criticism\n\nYour job is ONLY to greet, say goodbye, and redirect.\n\n---\n\n## 📋 EXAMPLE DIALOGUES\n\n**User:** \"Hi\"\n**You:** \"Hello! I'm Secretary, the receptionist for @LilBitcoinVert. Our main secretary will help you with call bookings and messages. What would you like to do?\"\n\n**User:** \"Good morning!\"\n**You:** \"Good morning! Welcome. I'll connect you to the main secretary who can help with call bookings and urgent messages. Please tell me what you need.\"\n\n**User:** \"Hey, how are you?\"\n**You:** \"Hello! I'm just the greeting agent. Let me transfer you to the main secretary who can answer your question. What can I help you with today?\"\n\n**User:** \"Bye\"\n**You:** \"Goodbye! If you need to book a call or reach @LilBitcoinVert later, just say 'call' or 'help'. Take care!\"\n\n**User:** \"See you later\"\n**You:** \"See you later! Feel free to return anytime. Just say 'call' to book a meeting or 'help' for assistance.\"\n\n**User:** \"Book a call\"\n**You:** \"I'm just the greeting agent. Let me transfer you to the main secretary who handles call bookings. Please tell me you'd like to book a call, and I will connect you.\"\n\n**User:** \"What can you do?\"\n**You:** \"I'm just the greeting agent — I welcome users and say goodbye. Our main secretary handles call bookings, messages, and questions. Would you like me to connect you?\"\n\n---\n\n## 🔑 KEY TRIGGERS FOR YOU\n\n| What user types | Your action |\n|----------------|-------------|\n| \"hi\", \"hello\", \"hey\", \"good morning\" | Greet and redirect |\n| \"bye\", \"goodbye\", \"see you\" | Say farewell |\n| Question or request after greeting | Redirect to main secretary |\n| Just \"hi\" with nothing else | Greet and ask what they need |\n\n---\n\n## ⚠️ REMEMBER\n\n- **You are NOT the main secretary**\n- **Your job is JUST greetings and farewells**\n- **Always redirect complex requests**\n- **Never use brackets** to describe actions\n- **Keep responses short** (2-3 sentences)\n- **Match user's language**\n\n---\n\n## 🎯 YOUR GOAL\n\nMake users feel welcomed, then quickly and politely redirect them to the main secretary for anything beyond a simple greeting or farewell.\n\nYou are the friendly front door to @LilBitcoinVert. Be warm, efficient, and know your limits."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        -128,
+        3952
+      ],
+      "id": "f2cb48fc-d368-4849-bd1a-55cfe0e159ff",
+      "name": "AI Agent2"
+    },
+    {
+      "parameters": {
+        "model": "nvidia/nemotron-3-super-120b-a12b:free",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -112,
+        3808
+      ],
+      "id": "4be491af-eafd-4348-acbf-4c5434c5f6a4",
+      "name": "nousresearch/hermes-3-llama-3.1-405b:free3",
+      "credentials": {
+        "openRouterApi": {
+          "id": "fN6PSAJsGv1jx7KL",
+          "name": "OpenRouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.original.business_connection_id }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        48,
+        3808
+      ],
+      "id": "0e4ad8ce-1e49-45a8-ab0a-9cd8c794c0a0",
+      "name": "Simple Memory2"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8800811205:AAEKLbn5yJkIliXDEpJteRrCbngHgTwftf0/sendMessage",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $('Parse text command2').item.json.original.chat_id }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.output }}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "html"
+            },
+            {
+              "name": "business_connection_id",
+              "value": "={{ $('Parse text command2').item.json.original.business_connection_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        256,
+        3952
+      ],
+      "id": "174e034d-571a-45c7-b379-ff2b956da63d",
+      "name": "Telegram send message3",
+      "notes": "Отправка ответа AI/бота в топик"
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiResponse = $input.first().json;\n\nlet responseText = aiResponse.text || aiResponse.output || aiResponse.response || '';\n\nresponseText = String(responseText || '').replace(/^\\(|\\)$/g, '').trim();\n\nif (!responseText) {\n  responseText = \"Я не понял запрос. Напишите /calls для управления звонками.\";\n}\n\nconst containsCalls = responseText.includes('/calls');\n\nreturn [{\n  json: {\n    contains_calls: containsCalls,\n    text: responseText,\n    original_data: $json.original\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        3600
+      ],
+      "id": "dc5dbc05-bd02-42d9-b80d-211639afdc89",
+      "name": "Code1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "73aa8f8e-1225-4486-8215-2f6c9b2842fa",
+              "leftValue": "={{ $json.contains_calls }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        432,
+        3600
+      ],
+      "id": "3f5dc3af-76a5-4afb-82ce-3f3090e8972b",
+      "name": "Is it about calls schedule?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8800811205:AAEKLbn5yJkIliXDEpJteRrCbngHgTwftf0/sendMessage",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "business_connection_id",
+              "value": "={{ $json.payload.business_connection_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        896,
+        3504
+      ],
+      "id": "d75d8962-9ff7-4e90-a1cb-ddaf86b08b4d",
+      "name": "Send Telegram Message"
+    },
+    {
+      "parameters": {
+        "content": "## Nous: Hermes 3 405B Instruct (free)\n\nhttps://openrouter.ai/nousresearch/hermes-3-llama-3.1-405b:free",
+        "height": 240,
+        "width": 304,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        256,
+        1232
+      ],
+      "typeVersion": 1,
+      "id": "41b91ee3-7d19-46d2-a1ef-3ef5fdecb4c4",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## 1. Create Open Router Account\n\nopen: https://openrouter.ai/workspaces/default/keys\n\n+ New Key (Blue button)\n\nName: Router\nCredit limit (optional)\nReset limit every...N/A\nExpiration: No Expiration",
+        "height": 256,
+        "width": 384,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        400,
+        1584
+      ],
+      "typeVersion": 1,
+      "id": "08a77cf9-33e4-40f9-8575-33a0908c7731",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## 2. Your API key:\n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\n\n## I will delete this key later, no worries)",
+        "height": 256,
+        "width": 368,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        784,
+        1584
+      ],
+      "typeVersion": 1,
+      "id": "7cf25b30-9811-45a1-b6d7-0ed0ddc1fe1b",
+      "name": "Sticky Note5"
+    },
+    {
+      "parameters": {
+        "model": "nousresearch/hermes-3-llama-3.1-405b:free",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        1408,
+        1616
+      ],
+      "id": "41a15011-a3ab-4e60-af35-0b79b6078136",
+      "name": "Router",
+      "credentials": {
+        "openRouterApi": {
+          "id": "MkIs4ML6cxVsVFc7",
+          "name": "Router"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## 3. Open this node\n\nCredential to connect with: \n+Create new Credential\n\nAPI KEY: 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\n\n(Key from Step 2 from your OpenRouter Accont)\n\nAfter that credential will be set\n\nModel: Any free or paid model which you like, but i will use Hermes free for tests.",
+        "height": 320,
+        "width": 368,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1152,
+        1584
+      ],
+      "typeVersion": 1,
+      "id": "bf26b2df-5d5d-4732-bd43-e56062f8f1cb",
+      "name": "Sticky Note6"
+    },
+    {
+      "parameters": {
+        "content": "## YOUR BOT TOKEN",
+        "height": 240,
+        "width": 150,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        560,
+        1232
+      ],
+      "typeVersion": 1,
+      "id": "48ae33c8-7217-43d3-819a-44eac6d1cc5e",
+      "name": "Sticky Note7"
+    },
+    {
+      "parameters": {
+        "content": "## RU (copy and paste to JavaScript field- 'Parse text command 2' NODE\nconst input = $input.first().json;\nconst body = input.body;\n\nlet chatId = null;\nlet messageId = null;\nlet username = null;\nlet firstName = null;\nlet lastName = null;\nlet isPremium = false;\nlet languageCode = 'en';\nlet searchText = null;\nlet messageDate = null;\nlet isBusiness = false;\n\nconst message = body.message || body.business_message;\n\nif (message) {\n  isBusiness = !!body.business_message;\n  chatId = message.chat.id;\n  messageId = message.message_id;\n  messageDate = message.date;\n  searchText = message.text || message.caption || '';\n  \n  if (message.from) {\n    username = message.from.username || null;\n    firstName = message.from.first_name || '';\n    lastName = message.from.last_name || '';\n    isPremium = message.from.is_premium || false;\n    languageCode = message.from.language_code || 'en';\n  }\n  \n  if (!message.from && message.chat) {\n    username = message.chat.username || null;\n    firstName = message.chat.first_name || '';\n    lastName = message.chat.last_name || '';\n  }\n}\n\nlet replyToMessageId = null;\nlet replyToText = null;\nif (message?.reply_to_message) {\n  replyToMessageId = message.reply_to_message.message_id;\n  replyToText = message.reply_to_message.text || '';\n}\n\nconst businessConnectionId = body.business_message?.business_connection_id || null;\n\nconst text = searchText || '';\nconst intentPatterns = {\n  greeting: /^(привет|здравствуй|доброе утро|добрый день|добрый вечер|хай|hello|hi|ку)/i,\n  question: /[??]|(как|почему|зачем|где|когда|кто|сколько|какой)|\\b(расскажи|объясни|подскажи)\\b/i,\n  reminder: /(напомни|запланируй|напоминание|не забудь|через|через\\s+\\d+\\s+(минут|час|день))|запомни/i,\n  task: /(сделай|выполни|задача|туду|todo|добавь задачу|отметь)/i,\n  schedule: /(завтра|сегодня|встреча|в \\d{1,2}:\\d{2}|встретимся|перезвони)/i,\n  report: /(отчет|покажи|статистика|сколько|данные|журнал|список)/i,\n  help: /(помощь|help|что умеешь|команды|что ты можешь)/i,\n  negative: /(плохо|ужасно|негатив|проблема|ошибка|не работает|не понимаю)/i,\n  positive: /(хорошо|отлично|супер|класс|спасибо|благодарю|здорово)/i,\n  farewell: /(пока|до свидания|увидимся|давай|прощай|bye|goodbye)/i,\n  identity: /(ты кто|твое имя|кто ты|создатель|кто тебя создал)/i,\n\n  callBooking: /(записаться|запись|звонок|консультация|встретиться|позвони|созвонимся|перезвони мне|поговорить)/i,\n  callCancel: /(отменить|отмена|перенести) (звонок|запись|встречу)/i,\n  callReschedule: /(перенести|изменить) (звонок|запись|время)/i\n};\n\nlet primaryIntent = 'unknown';\nlet confidence = 0;\nlet allIntents = [];\n\nfor (const [intent, pattern] of Object.entries(intentPatterns)) {\n  if (pattern.test(text)) {\n    allIntents.push(intent);\n    confidence = Math.max(confidence, intent === 'callBooking' ? 0.9 : 0.7);\n  }\n}\n\nif (allIntents.length === 0 && text.length > 0) {\n  allIntents.push('general');\n  confidence = 0.4;\n  primaryIntent = 'general';\n} else {\n  primaryIntent = allIntents[0];\n}\n\nlet command = null;\nif (text.startsWith('/')) {\n  const parts = text.split(' ');\n  command = parts[0].toLowerCase();\n  primaryIntent = 'command';\n  confidence = 0.95;\n}\n\nconst callPatterns = {\n\n  date: /(завтра|сегодня|послезавтра|в (пн|вт|ср|чт|пт|сб|вс)|\\d{1,2}\\s+(январ[ья]|феврал[ья]|марта|апрел[ья]|мая|июн[ья]|июл[ья]|августа|сентябр[ья]|октябр[ья]|ноябр[ья]|декабр[ья])|\\d{1,2}\\.\\d{1,2}\\.\\d{4})/i,\n\n  time: /(\\d{1,2}:\\d{2}|\\bв\\s+(\\d{1,2})\\s+часов?\\b|\\bв\\s+(\\d{1,2})\\b)/i,\n\n  topic: /про\\s+([а-яА-ЯёЁa-zA-Z0-9\\s]{5,40})(?=\\s|\\.|,|$)/i,\n\n  urgent: /(срочно|важно|немедленно|как можно скорее|сегодня же)/i\n};\n\nlet extractedCallDate = null;\nlet extractedCallTime = null;\nlet extractedTopic = null;\nlet isCallUrgent = false;\n\nif (primaryIntent === 'callBooking') {\n  const dateMatch = text.match(callPatterns.date);\n  if (dateMatch) extractedCallDate = dateMatch[0];\n  \n  const timeMatch = text.match(callPatterns.time);\n  if (timeMatch) extractedCallTime = timeMatch[0];\n  \n  const topicMatch = text.match(callPatterns.topic);\n  if (topicMatch) extractedTopic = topicMatch[1];\n  \n  isCallUrgent = callPatterns.urgent.test(text);\n}\n\nconst normalizedOutput = {\n  original: {\n    chat_id: chatId,\n    message_id: messageId,\n    user_name: `${firstName} ${lastName || ''}`.trim(),\n    username: username,\n    original_text: text,\n    is_business: isBusiness,\n    business_connection_id: businessConnectionId,\n    reply_to_message_id: messageId \n  },\n  \n  intent: {\n    primary: primaryIntent,\n    all: allIntents,\n    confidence: confidence,\n    is_command: !!command,\n    command_name: command\n  },\n  \n  call_context: {\n    is_booking_request: primaryIntent === 'callBooking',\n    requested_date: extractedCallDate,\n    requested_time: extractedCallTime,\n    topic: extractedTopic,\n    is_urgent: isCallUrgent,\n    calendly_link: primaryIntent === 'callBooking' ? \"https://calendly.com/pitsavello/30min\" : null\n  },\n  \n  debug: {\n    summary: `Intent: ${primaryIntent} (${Math.round(confidence * 100)}%) | Call: ${!!extractedCallDate} ${!!extractedCallTime}`,\n    timestamp: new Date().toISOString()\n  }\n};\n\nreturn [{\n  json: normalizedOutput\n}];",
+        "height": 176,
+        "width": 304,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -816,
+        3728
+      ],
+      "typeVersion": 1,
+      "id": "312e6263-3607-4a08-ab93-c4954228a80d",
+      "name": "Sticky Note8"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst body = input.body;\n\nlet chatId = null;\nlet messageId = null;\nlet username = null;\nlet firstName = null;\nlet lastName = null;\nlet isPremium = false;\nlet languageCode = 'en';\nlet searchText = null;\nlet messageDate = null;\nlet isBusiness = false;\n\nconst message = body.message || body.business_message;\n\nif (message) {\n  isBusiness = !!body.business_message;\n  chatId = message.chat.id;\n  messageId = message.message_id;\n  messageDate = message.date;\n  searchText = message.text || message.caption || '';\n  \n  if (message.from) {\n    username = message.from.username || null;\n    firstName = message.from.first_name || '';\n    lastName = message.from.last_name || '';\n    isPremium = message.from.is_premium || false;\n    languageCode = message.from.language_code || 'en';\n  }\n  \n  if (!message.from && message.chat) {\n    username = message.chat.username || null;\n    firstName = message.chat.first_name || '';\n    lastName = message.chat.last_name || '';\n  }\n}\n\nlet replyToMessageId = null;\nlet replyToText = null;\nif (message?.reply_to_message) {\n  replyToMessageId = message.reply_to_message.message_id;\n  replyToText = message.reply_to_message.text || '';\n}\n\nconst businessConnectionId = body.business_message?.business_connection_id || null;\n\nconst text = searchText || '';\n\nconst intentPatterns = {\n\n  callBooking: /(book|schedule|call|consultation|meet|call me|let's talk|appointment|reserve|set up a call|booking)/i,\n  callCancel: /(cancel|reschedule|change) (call|booking|meeting|appointment)/i,\n  callReschedule: /(reschedule|change|move) (call|booking|time|appointment)/i,\n  greeting: /^(hi|hello|hey|good morning|good afternoon|good evening|howdy|sup|greetings|yo)/i,\n  question: /[?]|\\b(how|why|where|when|who|what|which|how many|tell me|explain)\\b/i,\n  reminder: /(remind|remember|don't forget|set a reminder)/i,\n  task: /(do|complete|task|todo|add task|mark|create task)/i,\n  schedule: /(tomorrow|today|meeting|call back)/i,\n  report: /(report|show|statistics|data|log|list|summary)/i,\n  help: /(help|what can you do|commands|features)/i,\n  negative: /(bad|terrible|problem|error|not working|broken)/i,\n  positive: /(good|great|awesome|super|thanks|thank you)/i,\n  farewell: /(bye|goodbye|see you|farewell|take care)/i,\n  identity: /(who are you|your name|who created you|creator)/i\n};\n\nlet primaryIntent = 'unknown';\nlet confidence = 0;\nlet allIntents = [];\n\nfor (const [intent, pattern] of Object.entries(intentPatterns)) {\n  if (pattern.test(text)) {\n    allIntents.push(intent);\n    confidence = Math.max(confidence, intent === 'callBooking' ? 0.95 : 0.7);\n  }\n}\n\nif (allIntents.includes('callBooking')) {\n  primaryIntent = 'callBooking';\n  confidence = 0.95;\n} else if (allIntents.includes('command')) {\n  primaryIntent = 'command';\n  confidence = 0.95;\n} else if (allIntents.length > 0) {\n  primaryIntent = allIntents[0];\n} else if (text.length > 0) {\n  primaryIntent = 'general';\n  confidence = 0.4;\n}\n\nlet command = null;\nif (text.startsWith('/')) {\n  const parts = text.split(' ');\n  command = parts[0].toLowerCase();\n  primaryIntent = 'command';\n  confidence = 0.95;\n}\n\nconst callPatterns = {\n  date: /(tomorrow|today|day after tomorrow|on (mon|tue|wed|thu|fri|sat|sun)|\\d{1,2}\\s+(january|february|march|april|may|june|july|august|september|october|november|december)|\\d{1,2}\\/\\d{1,2}\\/\\d{4})/i,\n  time: /(\\d{1,2}:\\d{2}|\\bat\\s+(\\d{1,2})\\s+(am|pm)?\\b|\\bat\\s+(\\d{1,2})\\b)/i,\n  topic: /about\\s+([a-zA-Z0-9\\s]{5,40})(?=\\s|\\.|,|$)/i,\n  urgent: /(urgent|important|immediately|ASAP|as soon as possible|critical|today|emergency)/i\n};\n\nlet extractedCallDate = null;\nlet extractedCallTime = null;\nlet extractedTopic = null;\nlet isCallUrgent = false;\n\nif (primaryIntent === 'callBooking') {\n  const dateMatch = text.match(callPatterns.date);\n  if (dateMatch) extractedCallDate = dateMatch[0];\n  \n  const timeMatch = text.match(callPatterns.time);\n  if (timeMatch) extractedCallTime = timeMatch[0];\n  \n  const topicMatch = text.match(callPatterns.topic);\n  if (topicMatch) extractedTopic = topicMatch[1];\n  \n  isCallUrgent = callPatterns.urgent.test(text);\n}\n\nconst normalizedOutput = {\n  original: {\n    chat_id: chatId,\n    message_id: messageId,\n    user_name: `${firstName} ${lastName || ''}`.trim(),\n    username: username,\n    original_text: text,\n    is_business: isBusiness,\n    business_connection_id: businessConnectionId,\n    reply_to_message_id: messageId \n  },\n  \n  intent: {\n    primary: primaryIntent,\n    all: allIntents,\n    confidence: confidence,\n    is_command: !!command,\n    command_name: command\n  },\n  \n  call_context: {\n    is_booking_request: primaryIntent === 'callBooking',\n    requested_date: extractedCallDate,\n    requested_time: extractedCallTime,\n    topic: extractedTopic,\n    is_urgent: isCallUrgent,\n    calendly_link: primaryIntent === 'callBooking' ? \"https://calendly.com/pitsavello/30min\" : null\n  },\n  \n  debug: {\n    summary: `Intent: ${primaryIntent} (${Math.round(confidence * 100)}%) | Call: ${!!extractedCallDate} ${!!extractedCallTime}`,\n    timestamp: new Date().toISOString()\n  }\n};\n\nreturn [{\n  json: normalizedOutput\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        2160
+      ],
+      "id": "923a9dcf-dc85-422d-a278-66e13a080777",
+      "name": "Parse text command3"
+    },
+    {
+      "parameters": {
+        "content": "## Calendly\n\n1) Open: https://developer.calendly.com/\n2) Register\n3) Click on Account -> Click on My Apps = You will see blue button +Create new app.\n\n## Step 1 of 2\n\na.Provide OAuth app details\nName of app: Secretary\n\nb.Redirect URI\n\nExample: https://app.example.com/auth. For more information on Redirect URIs, read this article.\n\nIn case if you don't understand there is some comment bellow SET Calendly Webhook node\nGo back to n8n\n\n\n",
+        "height": 624,
+        "width": 352,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -272,
+        2464
+      ],
+      "typeVersion": 1,
+      "id": "29211987-398f-4cbf-9a64-64e07a89cdc1",
+      "name": "Sticky Note9"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "events": [
+          "invitee.created"
+        ]
+      },
+      "type": "n8n-nodes-base.calendlyTrigger",
+      "typeVersion": 1,
+      "position": [
+        528,
+        2784
+      ],
+      "id": "17f7bd0e-ac92-4feb-808c-27d12c81f41a",
+      "name": "Calendly Trigger",
+      "webhookId": "0ea7aeda-8380-40e0-91b0-1b74cc3c1324",
+      "credentials": {
+        "calendlyOAuth2Api": {
+          "id": "DfCBdgHuJ3PTKyNb",
+          "name": "Secretary"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "content": "## Set Calendly webhook\n\n+Create neew credential\nCalendly OAuth2 API\n\nOAuth Redirect URL\nhttps://n8n.com/rest/oauth2-credential/callback\n\n<- This is your URL for calendly (copy OAuth Redirect URL)\n\nGo Back to Calendly\n\nRedirect URI\nhttps://n8n.com/rest/oauth2-credential/callback\n\nKind of app\n*\nWeb\n\nEnvironment type\n*\nProduction\n\nCreate\n",
+        "height": 624,
+        "width": 320,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        80,
+        2464
+      ],
+      "typeVersion": 1,
+      "id": "c02a6f8a-f09e-46a6-a01a-ac4186ac56af",
+      "name": "Sticky Note10"
+    },
+    {
+      "parameters": {
+        "content": "## Step 2 of 2\n\nChoose scopes\nScopes define the permissions your app has to access data or perform actions in Calendly. When someone installs your app, they’ll need to approve the scopes it requests.\n\nGive all permissions for tests\n\nClick on blue button Create",
+        "height": 624,
+        "width": 304,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        400,
+        2464
+      ],
+      "typeVersion": 1,
+      "id": "a4e5dce4-4e90-4be1-adf3-71eac5229f44",
+      "name": "Sticky Note11"
+    },
+    {
+      "parameters": {
+        "content": "## Final\n\nYou will receive:\nClient ID\nYour app's unique identifier that's used to initiate OAuth.\nHERE_>\nQUiaiuNzGtMxrXERovnFksh17XhXVx1FuLcyFRMy-ac\n\nSAVE IT! (I WILL DELETE THIS FROM MY CALENDLY AFTER GUIDE)\n\nClient secret\nA secret that's shared between your app and Calendly's authorization server that's used to establish and refresh OAuth authentication. \nHERE_>\n2pGB6gra3D1VnL_BFYcS3aupfkCGkIEn9GV02EV52ig\n\nWebhook signing key\nA unique key shared between your app and Calendly that's used to verify events sent to your endpoints.\nHERE_>\nfbHazHETCoFKNjfz83zlbg3tXQvSqTqd0spNu8Ta3HM",
+        "height": 624,
+        "width": 304,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        704,
+        2464
+      ],
+      "typeVersion": 1,
+      "id": "ae7836ad-cd76-4368-943c-228998f5b28e",
+      "name": "Sticky Note12"
+    },
+    {
+      "parameters": {
+        "content": "## Calendly node\n\nGo back to n8n - and for Calendly Credential  URL will be : OAuth Redirect URL\nhttps://n8n.com/rest/oauth2-credential/callback\n Client ID *\n\nQUiaiuNzGtMxrXERovnFksh17XhXVx1FuLcyFRMy-ac  Client Secret   2pGB6gra3D1VnL_BFYcS3aupfkCGkIEn9GV02EV52ig  Connect my account  You will be redirected to page -> https://calendly.com/oauth/authorize?client_id=12345-ac&redirect_uri=https%3A%2F%2Fn8n.com%2Frest%2Foauth2-credential%2Fcallback&response_type=code&state=ididid12345&scope=\n\n Approve (blue button) Return back to n8n your Calendly is connected now  Go to https://calendly.com/app/scheduling/meeting_types/user/me  \nScheduling\nEvent types  \nClick on +Create (Blue button) \nName: Secretary \nOne on One and choose all parameters from date and time. \nChoose Google meet as location.  T\n\nhe Secretary card will appear  \nClick on button Copy Link. \n\nhttps://calendly.com/nameyour/secretary\nThis is invite link for your users.\n\n\nIf calendly and google calendar is connected to your calendal, user will receive email from calendal (You will receive 14 days free trial as soon as you will register first time  https://calendly.com/app)   ",
+        "height": 624,
+        "width": 592,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1008,
+        2464
+      ],
+      "typeVersion": 1,
+      "id": "9ca9dc1e-9dd1-4b34-8956-046c25b22e37",
+      "name": "Sticky Note13"
+    },
+    {
+      "parameters": {
+        "content": "## reply_markup (Change)\n{\"inline_keyboard\":[[{\"text\":\"📅 Call booking\",\"url\":\"https://calendly.com/nameyour/secretary\"}]]}\n\nYour url from calendly (Calendly Node Note)",
+        "width": 448
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -16,
+        3200
+      ],
+      "typeVersion": 1,
+      "id": "94ed563b-0d63-474d-b694-925f5b02cb58",
+      "name": "Sticky Note14"
+    },
+    {
+      "parameters": {
+        "content": "## This workflow stays Inactibe until 'Segretary Agent' workflow calls it"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1248,
+        3536
+      ],
+      "typeVersion": 1,
+      "id": "7d71de8b-6626-47e7-9b7f-c7acac05e942",
+      "name": "Sticky Note15"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "events": [
+          "invitee.canceled"
+        ]
+      },
+      "type": "n8n-nodes-base.calendlyTrigger",
+      "typeVersion": 1,
+      "position": [
+        1664,
+        2896
+      ],
+      "id": "094a316e-56b2-45f5-95f7-7854d1df8314",
+      "name": "Calendly Cancel",
+      "webhookId": "93aa07cd-1787-4306-a4dd-2c4ab115e5a1",
+      "credentials": {
+        "calendlyOAuth2Api": {
+          "id": "edgQTa8NNlMzKvCB",
+          "name": "Calendly account"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $input.first().json.payload;\nconst event = payload.scheduled_event;\n\nconst startTime = new Date(event.start_time);\nconst callDate = startTime.toISOString().split('T')[0];\nconst callTime = startTime.toISOString().split('T')[1].slice(0, 5);\n\nconst callData = {\n  user_name: payload.name || null,\n  user_email: payload.email,\n  call_type: event.name,\n  call_date: callDate,\n  call_time: callTime,\n  call_start: event.start_time,\n  call_end: event.end_time,\n  timezone: payload.timezone,\n  join_url: event.location.join_url,\n  cancel_url: payload.cancel_url,\n  reschedule_url: payload.reschedule_url,\n  calendly_event_uri: event.uri,\n  calendly_invitee_uri: payload.uri,\n  status: 'active',\n  raw_payload: JSON.stringify(payload)\n};\n\nreturn [{\n  json: callData\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1840,
+        2704
+      ],
+      "id": "4c94cffd-3c4d-4562-ab99-8c7d41cc0167",
+      "name": "Parse Call Data",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO \"calls\" (\n    user_name,\n    user_email,\n    call_type,\n    call_date,\n    call_time,\n    call_start,\n    call_end,\n    timezone,\n    join_url,\n    cancel_url,\n    reschedule_url,\n    calendly_event_uri,\n    calendly_invitee_uri,\n    status,\n    raw_payload\n) VALUES (\n    '{{ $json.user_name }}',\n    '{{ $json.user_email }}',\n    '{{ $json.call_type }}',\n    '{{ $json.call_date }}',\n    '{{ $json.call_time }}',\n    '{{ $json.call_start }}',\n    '{{ $json.call_end }}',\n    '{{ $json.timezone }}',\n    '{{ $json.join_url }}',\n    '{{ $json.cancel_url }}',\n    '{{ $json.reschedule_url }}',\n    '{{ $json.calendly_event_uri }}',\n    '{{ $json.calendly_invitee_uri }}',\n    '{{ $json.status }}',\n    '{{ $json.raw_payload }}'::jsonb\n);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2000,
+        2704
+      ],
+      "id": "93ea2d10-4535-44ca-be4e-51123ba689d6",
+      "name": "insert call info",
+      "credentials": {
+        "postgres": {
+          "id": "WIHxOzYOOSEjd0yr",
+          "name": "Postgres account"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE \"§calls\" \nSET \n    status = 'cancelled',\n    cancelled_at = NOW()\nWHERE user_email = '{{ $json.user_email }}' \n  AND status = 'active'",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2000,
+        2896
+      ],
+      "id": "8d6e9ade-2e06-48eb-aeb1-a54350c29756",
+      "name": "insert call info1",
+      "credentials": {
+        "postgres": {
+          "id": "WIHxOzYOOSEjd0yr",
+          "name": "Postgres account"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $input.first().json.payload;\nconst invitee = payload;\n\nconst userEmail = invitee.email;\n\nconst updateQuery = `\n    UPDATE \"pocket_ai_calls\" \n    SET \n        status = 'cancelled',\n        cancelled_at = NOW()\n    WHERE user_email = '${userEmail}' \n      AND status = 'active'\n    ORDER BY created_at DESC \n    LIMIT 1\n`;\n\nreturn [{\n  json: {\n    update_query: updateQuery,\n    user_email: userEmail\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1840,
+        2896
+      ],
+      "id": "e4aaf409-249b-4187-a22b-b6661d461e4e",
+      "name": "Parse Call Cancel Data",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "events": [
+          "invitee.created"
+        ]
+      },
+      "type": "n8n-nodes-base.calendlyTrigger",
+      "typeVersion": 1,
+      "position": [
+        1664,
+        2704
+      ],
+      "id": "7ce6c33c-a7e5-42bd-8c59-5e821bcbf992",
+      "name": "Calendly Trigger1",
+      "webhookId": "53442c12-0df0-4f71-9d60-158449d2eefd",
+      "credentials": {
+        "calendlyOAuth2Api": {
+          "id": "edgQTa8NNlMzKvCB",
+          "name": "Calendly account"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "content": "## Worflow start for Calendly with Postgres",
+        "height": 688,
+        "width": 576,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1600,
+        2416
+      ],
+      "typeVersion": 1,
+      "id": "ca7f4a63-9ed1-426e-bd59-ef7313001f5a",
+      "name": "Sticky Note16"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "CREATE TABLE \"calls\" (\n    id SERIAL PRIMARY KEY,\n    \n    user_name VARCHAR(200),\n    user_email VARCHAR(200) NOT NULL,\n    chat_id BIGINT,\n    \n    call_type VARCHAR(100),\n    call_date DATE,\n    call_time TIME,\n    call_start TIMESTAMP,\n    call_end TIMESTAMP,\n    timezone VARCHAR(50),\n    \n    join_url TEXT,\n    cancel_url TEXT,\n    reschedule_url TEXT,\n    calendly_event_uri TEXT,\n    calendly_invitee_uri TEXT,\n    \n    status VARCHAR(50) DEFAULT 'active',\n    \n    raw_payload JSONB,\n    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n);\n\nCREATE INDEX idx_calls_email ON \"pocket_ai_calls\" (user_email);\nCREATE INDEX idx_calls_chat_id ON \"pocket_ai_calls\" (chat_id);\nCREATE INDEX idx_calls_date ON \"pocket_ai_calls\" (call_date);\nCREATE INDEX idx_calls_status ON \"pocket_ai_calls\" (status);\nCREATE INDEX idx_calls_created ON \"pocket_ai_calls\" (created_at DESC);\n\nCREATE OR REPLACE FUNCTION update_updated_at_column()\nRETURNS TRIGGER AS $$\nBEGIN\n    NEW.updated_at = CURRENT_TIMESTAMP;\n    RETURN NEW;\nEND;\n$$ LANGUAGE plpgsql;\n\nDROP TRIGGER IF EXISTS update_calls_updated_at ON \"pocket_ai_calls\";\nCREATE TRIGGER update_calls_updated_at\n    BEFORE UPDATE ON \"pocket_ai_calls\"\n    FOR EACH ROW\n    EXECUTE FUNCTION update_updated_at_column();",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1664,
+        2528
+      ],
+      "id": "175647ca-780c-4343-bbf6-ecedf36a228b",
+      "name": "calls Create table",
+      "credentials": {
+        "postgres": {
+          "id": "WIHxOzYOOSEjd0yr",
+          "name": "Postgres account"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "ALTER TABLE \"calls\" \nADD COLUMN IF NOT EXISTS cancel_reason TEXT,\nADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP,\nADD COLUMN IF NOT EXISTS cancelled_by VARCHAR(100);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1840,
+        2528
+      ],
+      "id": "b0765f4f-c875-4581-bb52-2f63230972d8",
+      "name": "Add Calls Status",
+      "credentials": {
+        "postgres": {
+          "id": "WIHxOzYOOSEjd0yr",
+          "name": "Postgres account"
+        }
+      },
+      "disabled": true
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Parse text command2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse text command": {
+      "main": [
+        [
+          {
+            "node": "Convert for AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert for AI": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "nousresearch/hermes-3-llama-3.1-405b:free": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Telegram send message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram send message": {
+      "main": [
+        [
+          {
+            "node": "Do Nothing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "nousresearch/hermes-3-llama-3.1-405b:free1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram send message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse text command2": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent1": {
+      "main": [
+        [
+          {
+            "node": "Code1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "nousresearch/hermes-3-llama-3.1-405b:free2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory1": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram message with button",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Agent2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Telegram message with button": {
+      "main": [
+        []
+      ]
+    },
+    "Telegram send message2": {
+      "main": [
+        []
+      ]
+    },
+    "AI Agent2": {
+      "main": [
+        [
+          {
+            "node": "Telegram send message3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "nousresearch/hermes-3-llama-3.1-405b:free3": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent2",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory2": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent2",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram send message3": {
+      "main": [
+        []
+      ]
+    },
+    "Code1": {
+      "main": [
+        [
+          {
+            "node": "Is it about calls schedule?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is it about calls schedule?": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram send message2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Telegram Message": {
+      "main": [
+        []
+      ]
+    },
+    "Parse text command3": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calendly Cancel": {
+      "main": [
+        [
+          {
+            "node": "Parse Call Cancel Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Call Data": {
+      "main": [
+        [
+          {
+            "node": "insert call info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Call Cancel Data": {
+      "main": [
+        [
+          {
+            "node": "insert call info1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calendly Trigger1": {
+      "main": [
+        [
+          {
+            "node": "Parse Call Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "3cb0f66c-184d-45b3-9f6b-57fd16c0e386",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "148b2b278c24b3c49bc4399db7e7ce15ed94f5b1044d28401c56f6ab511f0347"
+  },
+  "id": "w6aQHR9Rmb6UdlrR",
+  "tags": [
+    {
+      "name": "reddit",
+      "id": "EeoUQcpBgPRnqC56",
+      "createdAt": "2026-05-31T14:33:31.053Z",
+      "updatedAt": "2026-05-31T14:33:31.053Z"
+    }
+  ]
+}

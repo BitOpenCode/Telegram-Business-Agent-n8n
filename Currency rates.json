@@ -1,0 +1,159 @@
+{
+  "name": "Currency rates",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "0acb96ca-9664-4020-87bd-86674f1ab982",
+      "typeVersion": 1.1,
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [
+        -176,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\nconst message = body.business_message;\nconst chatId = message.chat.id;\nconst businessId = message.business_connection_id;\nconst messageId = message.message_id;\n\nreturn [{\n  chat_id: chatId,\n  business_connection_id: businessId,\n  reply_to_message_id: messageId\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16,
+        -48
+      ],
+      "id": "ce723cb1-1eca-46ae-b2d1-58f7fa70d224",
+      "name": "Parse Currency Request"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://scanner.tradingview.com/forex/scan",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"symbols\": {\n    \"tickers\": [\n      \"FX_IDC:EURUSD\",\n      \"FX_IDC:GBPUSD\",\n      \"FX_IDC:USDJPY\",\n      \"FX_IDC:USDRUB\",\n      \"FX_IDC:USDCNY\",\n      \"FX_IDC:USDTHB\",\n      \"FX_IDC:USDAED\",\n      \"FX_IDC:CNYRUB\",\n      \"FX_IDC:USDCHF\",\n      \"FX_IDC:AUDUSD\"\n    ]\n  },\n  \"columns\": [\"close\", \"change\"]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        208,
+        -48
+      ],
+      "id": "224176d0-0afc-44e5-b5b3-91d34428d704",
+      "name": "Get Forex Rates"
+    },
+    {
+      "parameters": {
+        "jsCode": "const forexData = $input.first().json;\nconst originalData = $('Parse Currency Request').item.json;\n\nconst currencyPairs = [\n  { symbol: 'FX_IDC:EURUSD', name: 'EUR/USD' },\n  { symbol: 'FX_IDC:GBPUSD', name: 'GBP/USD' },\n  { symbol: 'FX_IDC:USDJPY', name: 'USD/JPY' },\n  { symbol: 'FX_IDC:USDRUB', name: 'USD/RUB' },\n  { symbol: 'FX_IDC:USDCNY', name: 'USD/CNY' },\n  { symbol: 'FX_IDC:USDTHB', name: 'USD/THB' },\n  { symbol: 'FX_IDC:USDAED', name: 'USD/AED' },\n  { symbol: 'FX_IDC:CNYRUB', name: 'CNY/RUB' },\n  { symbol: 'FX_IDC:USDCHF', name: 'USD/CHF' },\n  { symbol: 'FX_IDC:AUDUSD', name: 'AUD/USD' }\n];\n\nconst dataMap = {};\nif (forexData.data && Array.isArray(forexData.data)) {\n  for (const item of forexData.data) {\n    if (item.s && item.d && item.d.length >= 2) {\n      dataMap[item.s] = {\n        price: item.d[0],\n        change: item.d[1]\n      };\n    }\n  }\n}\n\nconst results = [];\nfor (const pair of currencyPairs) {\n  const data = dataMap[pair.symbol];\n  if (data) {\n    results.push({\n      name: pair.name,\n      price: parseFloat(data.price).toFixed(4),\n      change: parseFloat(data.change).toFixed(2)\n    });\n  }\n}\n\nif (results.length === 0) {\n  return [{\n    chat_id: originalData.chat_id,\n    text: \"❌ Not found.\",\n    business_connection_id: originalData.business_connection_id,\n    reply_to_message_id: originalData.reply_to_message_id\n  }];\n}\n\nlet text = `💱 *Currency rates (Forex 24h)*\\n\\n`;\nfor (let i = 0; i < results.length; i++) {\n  const curr = results[i];\n  const trend = curr.change >= 0 ? '📈' : '📉';\n  const changeSign = curr.change >= 0 ? '+' : '';\n  text += `${i+1}. *${curr.name}*: ${trend} ${curr.price} (${changeSign}${curr.change}%)\\n`;\n}\n\nreturn [{\n  chat_id: originalData.chat_id,\n  text: text,\n  parse_mode: \"Markdown\",\n  business_connection_id: originalData.business_connection_id,\n  reply_to_message_id: originalData.reply_to_message_id\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        -48
+      ],
+      "id": "79595c1f-2cca-4102-9111-17d45b69fb19",
+      "name": "Format Forex Response"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8800811205:AAEKLbn5yJkIliXDEpJteRrCbngHgTwftf0/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        608,
+        -48
+      ],
+      "id": "12792169-ddf9-4355-b4cb-34c84becf756",
+      "name": "Send Telegram Message"
+    },
+    {
+      "parameters": {
+        "content": "## Forex\nhttps://scanner.tradingview.com/forex/scan\n\nUsing JSON\n{\n  \"symbols\": {\n    \"tickers\": [\n      \"FX_IDC:EURUSD\",\n      \"FX_IDC:GBPUSD\",\n      \"FX_IDC:USDJPY\",\n      \"FX_IDC:USDRUB\",\n      \"FX_IDC:USDCNY\",\n      \"FX_IDC:USDTHB\",\n      \"FX_IDC:USDAED\",\n      \"FX_IDC:CNYRUB\",\n      \"FX_IDC:USDCHF\",\n      \"FX_IDC:AUDUSD\"\n    ]\n  },\n  \"columns\": [\"close\", \"change\"]\n}",
+        "height": 464,
+        "width": 192
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        160,
+        -416
+      ],
+      "typeVersion": 1,
+      "id": "f061b86c-e074-4ab4-a560-74a6d7a8dcbd",
+      "name": "Sticky Note"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Parse Currency Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Currency Request": {
+      "main": [
+        [
+          {
+            "node": "Get Forex Rates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Forex Rates": {
+      "main": [
+        [
+          {
+            "node": "Format Forex Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Forex Response": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "e611bc2c-8276-43b1-82da-45a6ca816a32",
+  "meta": {
+    "instanceId": "148b2b278c24b3c49bc4399db7e7ce15ed94f5b1044d28401c56f6ab511f0347"
+  },
+  "id": "uOM6FAQkWuXEkEVD",
+  "tags": [
+    {
+      "createdAt": "2026-05-31T14:33:31.053Z",
+      "updatedAt": "2026-05-31T14:33:31.053Z",
+      "id": "EeoUQcpBgPRnqC56",
+      "name": "reddit"
+    }
+  ]
+}
