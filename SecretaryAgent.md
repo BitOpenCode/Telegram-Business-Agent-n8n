@@ -1,7 +1,3 @@
-Here's the complete README documentation for the **Secretary Agent** workflow:
-
----
-
 # Secretary Agent - Main Workflow
 
 ## 📋 Overview
