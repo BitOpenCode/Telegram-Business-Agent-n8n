@@ -1,0 +1,260 @@
+{
+  "name": "More Button Music",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "fded8e6a-6211-4ec5-bb7c-01624d281618",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body;\nconst callback = body.callback_query;\nconst message = callback.message;\nconst chatId = message.chat.id;\nconst messageId = message.message_id;\nconst from = callback.from;\nconst username = from.username || null;\nconst firstName = from.first_name || '';\nconst lastName = from.last_name || '';\nconst isPremium = from.is_premium || false;\nconst languageCode = from.language_code || 'en';\nconst callbackData = callback.data || '';\nconst businessConnectionId = message.business_connection_id || null;\n\nconst parts = callbackData.split('|');\nconst action = parts[0];\nconst query = parts[1] || '';\nconst offsetRaw = parts[2] || '0';\nconst offset = parseInt(offsetRaw, 10);\n\nif (action !== 'dzmore') {\n  throw new Error('Invalid callback data for dzmore_results');\n}\n\nreturn [{\n  json: {\n    chat_id: chatId,\n    message_id: messageId,\n    username: username,\n    first_name: firstName,\n    last_name: lastName,\n    is_premium: isPremium,\n    language_code: languageCode,\n    callback_data: callbackData,\n    query: query,\n    offset: offset,\n    business_connection_id: businessConnectionId\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "1f18d514-a666-411e-a7dd-ef12dbd42075",
+      "name": "Parse dzmore callback"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.deezer.com/search?q={{ $json.query }}&index={{ $json.offset }}&limit=9",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        672,
+        0
+      ],
+      "id": "592f85d4-8062-4e94-aa0b-c0aaa68c7830",
+      "name": "Deezer Search"
+    },
+    {
+      "parameters": {
+        "jsCode": "const deezerData = $input.first().json;\nconst tracks = deezerData.data || [];\nconst total = deezerData.total || 0;\n\nif (!tracks || tracks.length === 0) {\n  const chatId = $('Parse dzmore callback').item.json.chat_id;\n  const replyToMessageId = $('Parse dzmore callback').item.json.message_id;\n  const query = $('Parse dzmore callback').item.json.query;\n  \n  return [{\n    json: {\n      chat_id: chatId,\n      reply_to_message_id: replyToMessageId,\n      text: `❌ Nothing found: <b>${query}</b>\\n\\n💡 Try:\\n• Artist name only\\n• Song title only\\n• Different spelling`,\n      parse_mode: 'HTML',\n      send_as_text: true \n    }\n  }];\n}\n\nconst chatId = $('Parse dzmore callback').item.json.chat_id;\nconst replyToMessageId = $('Parse dzmore callback').item.json.message_id;\nconst query = $('Parse dzmore callback').item.json.query;\nconst offset = $('Parse dzmore callback').item.json.offset;\n\nconst photo = tracks[0]?.album?.cover_big\n  || tracks[0]?.album?.cover_medium\n  || '';\n\nconst inline_keyboard = tracks.map(track => ([\n  {\n    text: `🎵 ${track.title} — ${track.artist.name}`,\n    callback_data: `dz|${track.id}`\n  }\n]));\n\nif (offset + tracks.length < total) {\n  let moreText = 'More…';\n  \n  if (tracks.length >= 5) {\n    moreText = `More… (${offset + tracks.length}/${total})`;\n  }\n  \n  inline_keyboard.push([\n    {\n      text: moreText,\n      callback_data: `dzmore|${query}|${offset + tracks.length}`\n    }\n  ]);\n}\n\nreturn [{\n  json: {\n    chat_id: chatId,\n    reply_to_message_id: replyToMessageId,\n    photo: photo,\n    caption: `🔍 Результаты по запросу: <b>${query}</b>`,\n    parse_mode: 'HTML',\n    reply_markup: { inline_keyboard }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        304
+      ],
+      "id": "00483e55-798e-40d5-9632-afa5e1f0d489",
+      "name": "Build keyboard"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/botYOUR_BOT_TOKEN/sendMessage",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "business_connection_id",
+              "value": "={{ $('Parse dzmore callback').item.json.business_connection_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chat_id\": {{ $json.chat_id }},\n  \"reply_to_message_id\": {{ $json.reply_to_message_id }},\n  \"text\": \"Music:\",\n  \"reply_markup\": {{ JSON.stringify($json.reply_markup) }}\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        496,
+        304
+      ],
+      "id": "10028d76-0925-4c3b-b48c-b4bb326cc0fd",
+      "name": "Send results to user"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        768,
+        304
+      ],
+      "id": "300cf5ad-d066-4be5-b46d-19bb1c19e3b3",
+      "name": "Done"
+    },
+    {
+      "parameters": {
+        "jsCode": "const callbackData = $('Parse dzmore callback').item.json.callback_data;\nconst parts = callbackData.split('|');\nlet query = parts[1] || '';\n\nquery = query\n  .replace(/[^\\w\\s\\u0400-\\u04FF-]/gi, ' ')\n  .replace(/\\s+/g, ' ')\n  .trim();\n\nconst offset = parts[2] || '0';\n\nreturn [{\n  json: {\n    query: query,\n    offset: Number(offset)\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        0
+      ],
+      "id": "47337d9a-9bd9-4b64-86c4-8b0189fd060b",
+      "name": "Deezer  Norm text"
+    },
+    {
+      "parameters": {
+        "content": "[\n  {\n    \"chat_id\": 11XXXXXXX,\n    \"message_id\": 7XXXX1,\n    \"username\": \"sapelon\",\n    \"first_name\": \"₿\",\n    \"last_name\": \"\",\n    \"is_premium\": true,\n    \"language_code\": \"en\",\n    \"callback_data\": \"dzmore|Eminem|10\",\n    \"query\": \"Eminem\",\n    \"offset\": 10,\n    \"business_connection_id\": \"DXXXXXXXXXXXXXXXXXXXXc\"\n  }\n]",
+        "height": 304
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        144,
+        -304
+      ],
+      "typeVersion": 1,
+      "id": "ad542825-b21c-4344-93e0-037d634b7028",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "This is a query sanitizer — it cleans and prepares a user's search query for the Deezer API.\n\nWhat it removes:\nRemoves\tKeeps\n[^\\/\\w\\s\\u0400-\\u04FF-]\tLetters (A-Z, a-z, А-Я, а-я)\nSpecial characters (!@#$%^&*()=+)\tNumbers (0-9)\nPunctuation (. , ; \tSpaces\nQuotes (\" ')\tHyphens (-)\n",
+        "height": 288,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        400,
+        -400
+      ],
+      "typeVersion": 1,
+      "id": "81d9b0f9-2875-4b13-b4d4-1bd7f502e087",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "[\n  {\n    \"query\": \"Eminem\",\n    \"offset\": 10\n  }\n]",
+        "height": 128
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        400,
+        -112
+      ],
+      "typeVersion": 1,
+      "id": "d887bba5-c0bf-4027-834d-149980086993",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "[\n  {\n    \"data\": [\n      {\n        \"id\": 128743587,\n        \"readable\": true,\n        \"title\": \"What's The Difference\",\n        \"title_short\": \"What's The Difference\",\n        \"title_version\": \"\",\n        \"isrc\": \"USIR19915074\",\n        \"link\": \"https://www.deezer.com/track/128743587\",\n        \"duration\": 244,\n        \"rank\": 793825,\n        \"explicit_lyrics\": true,\n        \"explicit_content_lyrics\": 1,\n        \"explicit_content_cover\": 2,\n        \"preview\": \"https://cdnt-preview.dzcdn.net/api/1/1/b/d/1/0/bd150be90115cadfdaf00db712ac9dad.mp3?hdnea=exp=1782737766~acl=/api/1/1/b/d/1/0/bd150be90115cadfdaf00db712ac9dad.mp3*~data=user_id=0,application_id=42~hmac=7220391a68a9173fc495f80d54ea56cdcbe336860bc2b33e01e2a5d3c3c9cad7\",\n        \"md5_image\": \"0d9a24d054cbc5ab11843beed9f1422b\",\n        \"artist\": {\n          \"id\": 763,\n          \"name\": \"Dr. Dre\",\n          \"link\": \"https://www.deezer.com/artist/763\",\n          \"picture\": \"https://api.deezer.com/artist/763/image\",\n          \"picture_small\": \"https://cdn-images.dzcdn.net/images/artist/5af98b093efb7b818e4e084621c76b85/56x56-000000-80-0-0.jpg\",\n          \"picture_medium\": \"https://cdn-images.dzcdn.net/images/artist/5af98b093efb7b818e4e084621c76b85/250x250-000000-80-0-0.jpg\",\n          \"picture_big\": \"https://cdn-images.dzcdn.net/images/artist/5af98b093efb7b818e4e084621c76b85/500x500-000000-80-0-0.jpg\",\n          \"picture_xl\": \"https://cdn-images.dzcdn.net/images/artist/5af98b093efb7b818e4e084621c76b85/1000x1000-000000-80-0-0.jpg\",\n          \"tracklist\": \"https://api.deezer.com/artist/763/top?limit=50\",\n          \"type\": \"artist\"\n        },\n        \"album\": {\n          \"id\": 13606387,\n          \"title\": \"2001\",\n          \"cover\": \"https://api.deezer.com/album/13606387/image\",\n          \"cover_small\": \"https://cdn-images.dzcdn.net/images/cover/0d9a24d054cbc5ab11843beed9f1422b/56x56-000000-80-0-0.jpg\",\n          \"cover_medium\": \"https://cdn-images.dzcdn.net/images/cover/0d9a24d054cbc5ab11843beed9f1422b/250x250-000000-80-0-0.jpg\",\n          \"cover_big\": \"https://cdn-images.dzcdn.net/images/cover/0d9a24d054cbc5ab11843beed9f1422b/500x500-000000-80-0-0.jpg\",\n          \"cover_xl\": \"https://cdn-images.dzcdn.net/images/cover/0d9a24d054cbc5ab11843beed9f1422b/1000x1000-000000-80-0-0.jpg\",\n          \"md5_image\": \"0d9a24d054cbc5ab11843beed9f1422b\",\n          \"tracklist\": \"https://api.deezer.com/album/13606387/tracks\",\n          \"type\": \"album\"\n        },\n        \"type\": \"track\"\n      },\n      {\n        \"id\": 979041,\n        \"readable\": true,\n        \"title\": \"Smack That (Clean)\",\n        \"title_short\": \"Smack That\",\n        \"title_version\": \"(Clean)\",\n        \"isrc\": \"USUM70609035\",\n        \"link\": \"https://www.deezer.com/track/979041\",\n        \"duration\": 212,\n        \"rank\": 860263,\n        \"explicit_lyrics\": false,\n        \"explicit_content_lyrics\": 3,\n        \"explicit_content_cover\": 2,\n        \"preview\": \"https://cdnt-preview.dzcdn.net/api/1/1/6/0/9/0/60968e50d4c9b473bd56c61204b8d8f7.mp3?hdnea=exp=1782737766~acl=/api/1/1/6/0/9/0/60968e50d4c9b473bd56c61204b8d8f7.mp3*~data=user_id=0,application_id=42~hmac=be779d6ffe4e96e5afb8eb41ef155861aabdb83760c1b22fa03bee7c3e579687\",\n        \"md5_image\": \"bc4d98904d61661cc6d7dd53745340d0\",\n        \"artist\": {\n          \"id\": 38,\n          \"name\": \"Akon\",\n          \"link\": \"https://www.deezer.com/artist/38\",\n          \"picture\": \"https://api.deezer.com/artist/38/image\",\n          \"picture_small\": \"https://cdn-images.dzcdn.net/images/artist/2b0f21d5b1c6d7a674d9a60d4a6207b2/56x56-000000-80-0-0.jpg\",\n          \"picture_medium\": \"https://cdn-images.dzcdn.net/images/artist/2b0f21d5b1c6d7a674d9a60d4a6207b2/250x250-000000-80-0-0.jpg\",\n          \"picture_big\": \"https://cdn-images.dzcdn.net/images/artist/2b0f21d5b1c6d7a674d9a60d4a6207b2/500x500-000000-80-0-0.jpg\",\n          \"picture_xl\": \"https://cdn-images.dzcdn.net/images/artist/2b0f21d5b1c6d7a674d9a60d4a6207b2/1000x1000-000000-80-0-0.jpg\",\n          \"tracklist\": \"https://api.deezer.com/artist/38/top?limit=50\",\n          \"type\": \"artist\"\n        },\n        \"album\": {\n          \"id\": 108938,\n          \"title\": \"Konvicted\",\n          \"cover\": \"https://api.deezer.com/album/108938/image\",\n          \"cover_small\": \"https://cdn-images.dzcdn.net/images/cover/bc4d98904d61661cc6d7dd53745340d0/56x56-000000-80-0-0.jpg\",\n          \"cover_medium\": \"https://cdn-images.dzcdn.net/images/cover/bc4d98904d61661cc6d7dd53745340d0/250x250-000000-80-0-0.jpg\",\n          \"cover_big\": \"https://cdn-images.dzcdn.net/images/cover/bc4d98904d61661cc6d7dd53745340d0/500x500-000000-80-0-0.jpg\",\n          \"cover_xl\": \"https://cdn-images.dzcdn.net/images/cover/bc4d98904d61661cc6d7dd53745340d0/1000x1000-000000-80-0-0.jpg\",\n          \"md5_image\": \"bc4d98904d61661cc6d7dd53745340d0\",\n          \"tracklist\": \"https://api.deezer.com/album/108938/tracks\",\n          \"type\": \"album\"\n        },\n        \"type\": \"track\"\n      },\n      {\n        \"id\": 1575472,\n        \"readable\": true,\n        \"title\": \"You Don't Know\",\n        \"title_short\": \"You Don't Know\",\n        \"title_version\": \"\",\n        \"isrc\": \"USUM70613171\",\n        \"link\": \"https://www.deezer.com/track/1575472\",\n        \"duration\": 257,\n        \"rank\": 737382,\n        \"explicit_lyrics\": true,\n        \"explicit_content_lyrics\": 1,\n        \"explicit_content_cover\": 2,\n        \"preview\": \"https://cdnt-preview.dzcdn.net/api/1/1/4/2/1/0/42196c3196f303f83b6fe0a4a89e66e6.mp3?hdnea=exp=1782737766~acl=/api/1/1/4/2/1/0/42196c3196f303f83b6fe0a4a89e66e6.mp3*~data=user_id=0,application_id=42~hmac=ff39447407e538370d253fabecb38ad6835f0f78149944a29ba23514157d2705\",\n        \"md5_image\": \"90b0b4820d5483d707132b79605d870b\",\n        \"artist\": {\n          \"id\": 13,\n          \"name\": \"Eminem\",\n          \"link\": \"https://www.deezer.com/artist/13\",\n          \"picture\": \"https://api.deezer.com/artist/13/image\",\n          \"picture_small\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/56x56-000000-80-0-0.jpg\",\n          \"picture_medium\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/250x250-000000-80-0-0.jpg\",\n          \"picture_big\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/500x500-000000-80-0-0.jpg\",\n          \"picture_xl\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/1000x1000-000000-80-0-0.jpg\",\n          \"tracklist\": \"https://api.deezer.com/artist/13/top?limit=50\",\n          \"type\": \"artist\"\n        },\n        \"album\": {\n          \"id\": 161523,\n          \"title\": \"Eminem Presents The Re-Up\",\n          \"cover\": \"https://api.deezer.com/album/161523/image\",\n          \"cover_small\": \"https://cdn-images.dzcdn.net/images/cover/90b0b4820d5483d707132b79605d870b/56x56-000000-80-0-0.jpg\",\n          \"cover_medium\": \"https://cdn-images.dzcdn.net/images/cover/90b0b4820d5483d707132b79605d870b/250x250-000000-80-0-0.jpg\",\n          \"cover_big\": \"https://cdn-images.dzcdn.net/images/cover/90b0b4820d5483d707132b79605d870b/500x500-000000-80-0-0.jpg\",\n          \"cover_xl\": \"https://cdn-images.dzcdn.net/images/cover/90b0b4820d5483d707132b79605d870b/1000x1000-000000-80-0-0.jpg\",\n          \"md5_image\": \"90b0b4820d5483d707132b79605d870b\",\n          \"tracklist\": \"https://api.deezer.com/album/161523/tracks\",\n          \"type\": \"album\"\n        },\n        \"type\": \"track\"\n      },\n      {\n        \"id\": 128743593,\n        \"readable\": true,\n        \"title\": \"Forgot About Dre\",\n        \"title_short\": \"Forgot About Dre\",\n        \"title_version\": \"\",\n        \"isrc\": \"USIR19915077\",\n        \"link\": \"https://www.deezer.com/track/128743593\",\n        \"duration\": 222,\n        \"rank\": 800992,\n        \"explicit_lyrics\": true,\n        \"explicit_content_lyrics\": 1,\n        \"explicit_content_cover\": 2,\n        \"preview\": \"https://cdnt-preview.dzcdn.net/api/1/1/3/8/6/0/386934fb234fcbad988e0d49da77c597.mp3?hdnea=exp=1782737766~acl=/api/1/1/3/8/6/0/386934fb234fcbad988e0d49da77c597.mp3*~data=user_id=0,application_id=42~hmac=f745067879c3a6b1ff269a65e4b5c984ba1ee6247f687188c36b0dfc5e9abad6\",\n        \"md5_image\": \"0d9a24d054cbc5ab11843beed9f1422b\",\n        \"artist\": {\n          \"id\": 763,\n          \"name\": \"Dr. Dre\",\n          \"link\": \"https://www.deezer.com/artist/763\",\n          \"picture\": \"https://api.deezer.com/artist/763/image\",\n          \"picture_small\": \"https://cdn-images.dzcdn.net/images/artist/5af98b093efb7b818e4e084621c76b85/56x56-000000-80-0-0.jpg\",\n          \"picture_medium\": \"https://cdn-images.dzcdn.net/images/artist/5af98b093efb7b818e4e084621c76b85/250x250-000000-80-0-0.jpg\",\n          \"picture_big\": \"https://cdn-images.dzcdn.net/images/artist/5af98b093efb7b818e4e084621c76b85/500x500-000000-80-0-0.jpg\",\n          \"picture_xl\": \"https://cdn-images.dzcdn.net/images/artist/5af98b093efb7b818e4e084621c76b85/1000x1000-000000-80-0-0.jpg\",\n          \"tracklist\": \"https://api.deezer.com/artist/763/top?limit=50\",\n          \"type\": \"artist\"\n        },\n        \"album\": {\n          \"id\": 13606387,\n          \"title\": \"2001\",\n          \"cover\": \"https://api.deezer.com/album/13606387/image\",\n          \"cover_small\": \"https://cdn-images.dzcdn.net/images/cover/0d9a24d054cbc5ab11843beed9f1422b/56x56-000000-80-0-0.jpg\",\n          \"cover_medium\": \"https://cdn-images.dzcdn.net/images/cover/0d9a24d054cbc5ab11843beed9f1422b/250x250-000000-80-0-0.jpg\",\n          \"cover_big\": \"https://cdn-images.dzcdn.net/images/cover/0d9a24d054cbc5ab11843beed9f1422b/500x500-000000-80-0-0.jpg\",\n          \"cover_xl\": \"https://cdn-images.dzcdn.net/images/cover/0d9a24d054cbc5ab11843beed9f1422b/1000x1000-000000-80-0-0.jpg\",\n          \"md5_image\": \"0d9a24d054cbc5ab11843beed9f1422b\",\n          \"tracklist\": \"https://api.deezer.com/album/13606387/tracks\",\n          \"type\": \"album\"\n        },\n        \"type\": \"track\"\n      },\n      {\n        \"id\": 1109733,\n        \"readable\": true,\n        \"title\": \"Shake That\",\n        \"title_short\": \"Shake That\",\n        \"title_version\": \"\",\n        \"isrc\": \"USUM70506389\",\n        \"link\": \"https://www.deezer.com/track/1109733\",\n        \"duration\": 275,\n        \"rank\": 750186,\n        \"explicit_lyrics\": true,\n        \"explicit_content_lyrics\": 1,\n        \"explicit_content_cover\": 0,\n        \"preview\": \"https://cdnt-preview.dzcdn.net/api/1/1/5/f/e/0/5fec5acaaf90645e08bd607470c5a8c8.mp3?hdnea=exp=1782737766~acl=/api/1/1/5/f/e/0/5fec5acaaf90645e08bd607470c5a8c8.mp3*~data=user_id=0,application_id=42~hmac=36a4e2a5f0b82cd3028804e8675fe692296228f5ca6ddb62af9994a2e017a5e8\",\n        \"md5_image\": \"e2b36a9fda865cb2e9ed1476b6291a7d\",\n        \"artist\": {\n          \"id\": 13,\n          \"name\": \"Eminem\",\n          \"link\": \"https://www.deezer.com/artist/13\",\n          \"picture\": \"https://api.deezer.com/artist/13/image\",\n          \"picture_small\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/56x56-000000-80-0-0.jpg\",\n          \"picture_medium\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/250x250-000000-80-0-0.jpg\",\n          \"picture_big\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/500x500-000000-80-0-0.jpg\",\n          \"picture_xl\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/1000x1000-000000-80-0-0.jpg\",\n          \"tracklist\": \"https://api.deezer.com/artist/13/top?limit=50\",\n          \"type\": \"artist\"\n        },\n        \"album\": {\n          \"id\": 119606,\n          \"title\": \"Curtain Call: The Hits\",\n          \"cover\": \"https://api.deezer.com/album/119606/image\",\n          \"cover_small\": \"https://cdn-images.dzcdn.net/images/cover/e2b36a9fda865cb2e9ed1476b6291a7d/56x56-000000-80-0-0.jpg\",\n          \"cover_medium\": \"https://cdn-images.dzcdn.net/images/cover/e2b36a9fda865cb2e9ed1476b6291a7d/250x250-000000-80-0-0.jpg\",\n          \"cover_big\": \"https://cdn-images.dzcdn.net/images/cover/e2b36a9fda865cb2e9ed1476b6291a7d/500x500-000000-80-0-0.jpg\",\n          \"cover_xl\": \"https://cdn-images.dzcdn.net/images/cover/e2b36a9fda865cb2e9ed1476b6291a7d/1000x1000-000000-80-0-0.jpg\",\n          \"md5_image\": \"e2b36a9fda865cb2e9ed1476b6291a7d\",\n          \"tracklist\": \"https://api.deezer.com/album/119606/tracks\",\n          \"type\": \"album\"\n        },\n        \"type\": \"track\"\n      },\n      {\n        \"id\": 6461432,\n        \"readable\": true,\n        \"title\": \"Not Afraid\",\n        \"title_short\": \"Not Afraid\",\n        \"title_version\": \"\",\n        \"isrc\": \"USUM71011769\",\n        \"link\": \"https://www.deezer.com/track/6461432\",\n        \"duration\": 251,\n        \"rank\": 863428,\n        \"explicit_lyrics\": true,\n        \"explicit_content_lyrics\": 1,\n        \"explicit_content_cover\": 1,\n        \"preview\": \"https://cdnt-preview.dzcdn.net/api/1/1/b/8/c/0/b8c80674e1efeb06186a8c87f40a54f9.mp3?hdnea=exp=1782737766~acl=/api/1/1/b/8/c/0/b8c80674e1efeb06186a8c87f40a54f9.mp3*~data=user_id=0,application_id=42~hmac=0129166a8ef827f172d29277a9cc4865bd0b18bdad6b4c45661abdd00c3b2b39\",\n        \"md5_image\": \"be682506145061814eddee648edb7c59\",\n        \"artist\": {\n          \"id\": 13,\n          \"name\": \"Eminem\",\n          \"link\": \"https://www.deezer.com/artist/13\",\n          \"picture\": \"https://api.deezer.com/artist/13/image\",\n          \"picture_small\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/56x56-000000-80-0-0.jpg\",\n          \"picture_medium\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/250x250-000000-80-0-0.jpg\",\n          \"picture_big\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/500x500-000000-80-0-0.jpg\",\n          \"picture_xl\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/1000x1000-000000-80-0-0.jpg\",\n          \"tracklist\": \"https://api.deezer.com/artist/13/top?limit=50\",\n          \"type\": \"artist\"\n        },\n        \"album\": {\n          \"id\": 595243,\n          \"title\": \"Recovery\",\n          \"cover\": \"https://api.deezer.com/album/595243/image\",\n          \"cover_small\": \"https://cdn-images.dzcdn.net/images/cover/be682506145061814eddee648edb7c59/56x56-000000-80-0-0.jpg\",\n          \"cover_medium\": \"https://cdn-images.dzcdn.net/images/cover/be682506145061814eddee648edb7c59/250x250-000000-80-0-0.jpg\",\n          \"cover_big\": \"https://cdn-images.dzcdn.net/images/cover/be682506145061814eddee648edb7c59/500x500-000000-80-0-0.jpg\",\n          \"cover_xl\": \"https://cdn-images.dzcdn.net/images/cover/be682506145061814eddee648edb7c59/1000x1000-000000-80-0-0.jpg\",\n          \"md5_image\": \"be682506145061814eddee648edb7c59\",\n          \"tracklist\": \"https://api.deezer.com/album/595243/tracks\",\n          \"type\": \"album\"\n        },\n        \"type\": \"track\"\n      },\n      {\n        \"id\": 72160317,\n        \"readable\": true,\n        \"title\": \"The Monster\",\n        \"title_short\": \"The Monster\",\n        \"title_version\": \"\",\n        \"isrc\": \"USUM71314082\",\n        \"link\": \"https://www.deezer.com/track/72160317\",\n        \"duration\": 250,\n        \"rank\": 897975,\n        \"explicit_lyrics\": true,\n        \"explicit_content_lyrics\": 1,\n        \"explicit_content_cover\": 1,\n        \"preview\": \"https://cdnt-preview.dzcdn.net/api/1/1/9/0/0/0/900393147281069933013563cea5817b.mp3?hdnea=exp=1782737766~acl=/api/1/1/9/0/0/0/900393147281069933013563cea5817b.mp3*~data=user_id=0,application_id=42~hmac=43bf051c0a877da6db23bbfe81e13ad4a37aac1806428ccffc20280caa14d9b1\",\n        \"md5_image\": \"b6938db3addc3ccd9575d6d12220e466\",\n        \"artist\": {\n          \"id\": 13,\n          \"name\": \"Eminem\",\n          \"link\": \"https://www.deezer.com/artist/13\",\n          \"picture\": \"https://api.deezer.com/artist/13/image\",\n          \"picture_small\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/56x56-000000-80-0-0.jpg\",\n          \"picture_medium\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/250x250-000000-80-0-0.jpg\",\n          \"picture_big\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/500x500-000000-80-0-0.jpg\",\n          \"picture_xl\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/1000x1000-000000-80-0-0.jpg\",\n          \"tracklist\": \"https://api.deezer.com/artist/13/top?limit=50\",\n          \"type\": \"artist\"\n        },\n        \"album\": {\n          \"id\": 7090505,\n          \"title\": \"The Marshall Mathers LP2 (Deluxe)\",\n          \"cover\": \"https://api.deezer.com/album/7090505/image\",\n          \"cover_small\": \"https://cdn-images.dzcdn.net/images/cover/b6938db3addc3ccd9575d6d12220e466/56x56-000000-80-0-0.jpg\",\n          \"cover_medium\": \"https://cdn-images.dzcdn.net/images/cover/b6938db3addc3ccd9575d6d12220e466/250x250-000000-80-0-0.jpg\",\n          \"cover_big\": \"https://cdn-images.dzcdn.net/images/cover/b6938db3addc3ccd9575d6d12220e466/500x500-000000-80-0-0.jpg\",\n          \"cover_xl\": \"https://cdn-images.dzcdn.net/images/cover/b6938db3addc3ccd9575d6d12220e466/1000x1000-000000-80-0-0.jpg\",\n          \"md5_image\": \"b6938db3addc3ccd9575d6d12220e466\",\n          \"tracklist\": \"https://api.deezer.com/album/7090505/tracks\",\n          \"type\": \"album\"\n        },\n        \"type\": \"track\"\n      },\n      {\n        \"id\": 916427,\n        \"readable\": true,\n        \"title\": \"Superman\",\n        \"title_short\": \"Superman\",\n        \"title_version\": \"\",\n        \"isrc\": \"USIR10211062\",\n        \"link\": \"https://www.deezer.com/track/916427\",\n        \"duration\": 350,\n        \"rank\": 862794,\n        \"explicit_lyrics\": true,\n        \"explicit_content_lyrics\": 1,\n        \"explicit_content_cover\": 0,\n        \"preview\": \"https://cdnt-preview.dzcdn.net/api/1/1/9/a/e/0/9ae7b301a2467f1d505c6382a8da1e29.mp3?hdnea=exp=1782737766~acl=/api/1/1/9/a/e/0/9ae7b301a2467f1d505c6382a8da1e29.mp3*~data=user_id=0,application_id=42~hmac=3501792730849ea0849756f0bd152483ad5100acc4ecf4222dd672432848ab04\",\n        \"md5_image\": \"ec3c8ed67427064c70f67e5815b74cef\",\n        \"artist\": {\n          \"id\": 13,\n          \"name\": \"Eminem\",\n          \"link\": \"https://www.deezer.com/artist/13\",\n          \"picture\": \"https://api.deezer.com/artist/13/image\",\n          \"picture_small\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/56x56-000000-80-0-0.jpg\",\n          \"picture_medium\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/250x250-000000-80-0-0.jpg\",\n          \"picture_big\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/500x500-000000-80-0-0.jpg\",\n          \"picture_xl\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/1000x1000-000000-80-0-0.jpg\",\n          \"tracklist\": \"https://api.deezer.com/artist/13/top?limit=50\",\n          \"type\": \"artist\"\n        },\n        \"album\": {\n          \"id\": 103248,\n          \"title\": \"The Eminem Show\",\n          \"cover\": \"https://api.deezer.com/album/103248/image\",\n          \"cover_small\": \"https://cdn-images.dzcdn.net/images/cover/ec3c8ed67427064c70f67e5815b74cef/56x56-000000-80-0-0.jpg\",\n          \"cover_medium\": \"https://cdn-images.dzcdn.net/images/cover/ec3c8ed67427064c70f67e5815b74cef/250x250-000000-80-0-0.jpg\",\n          \"cover_big\": \"https://cdn-images.dzcdn.net/images/cover/ec3c8ed67427064c70f67e5815b74cef/500x500-000000-80-0-0.jpg\",\n          \"cover_xl\": \"https://cdn-images.dzcdn.net/images/cover/ec3c8ed67427064c70f67e5815b74cef/1000x1000-000000-80-0-0.jpg\",\n          \"md5_image\": \"ec3c8ed67427064c70f67e5815b74cef\",\n          \"tracklist\": \"https://api.deezer.com/album/103248/tracks\",\n          \"type\": \"album\"\n        },\n        \"type\": \"track\"\n      },\n      {\n        \"id\": 6461440,\n        \"readable\": true,\n        \"title\": \"Love The Way You Lie\",\n        \"title_short\": \"Love The Way You Lie\",\n        \"title_version\": \"\",\n        \"isrc\": \"USUM71015397\",\n        \"link\": \"https://www.deezer.com/track/6461440\",\n        \"duration\": 263,\n        \"rank\": 932417,\n        \"explicit_lyrics\": true,\n        \"explicit_content_lyrics\": 1,\n        \"explicit_content_cover\": 1,\n        \"preview\": \"https://cdnt-preview.dzcdn.net/api/1/1/c/8/9/0/c89ba14b5d142a98e3ad48036b05d10d.mp3?hdnea=exp=1782737766~acl=/api/1/1/c/8/9/0/c89ba14b5d142a98e3ad48036b05d10d.mp3*~data=user_id=0,application_id=42~hmac=c77095b5a4bead923e28a23457751af1aabd85e915a5b1956d8cbea13f5238a9\",\n        \"md5_image\": \"be682506145061814eddee648edb7c59\",\n        \"artist\": {\n          \"id\": 13,\n          \"name\": \"Eminem\",\n          \"link\": \"https://www.deezer.com/artist/13\",\n          \"picture\": \"https://api.deezer.com/artist/13/image\",\n          \"picture_small\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/56x56-000000-80-0-0.jpg\",\n          \"picture_medium\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/250x250-000000-80-0-0.jpg\",\n          \"picture_big\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/500x500-000000-80-0-0.jpg\",\n          \"picture_xl\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/1000x1000-000000-80-0-0.jpg\",\n          \"tracklist\": \"https://api.deezer.com/artist/13/top?limit=50\",\n          \"type\": \"artist\"\n        },\n        \"album\": {\n          \"id\": 595243,\n          \"title\": \"Recovery\",\n          \"cover\": \"https://api.deezer.com/album/595243/image\",\n          \"cover_small\": \"https://cdn-images.dzcdn.net/images/cover/be682506145061814eddee648edb7c59/56x56-000000-80-0-0.jpg\",\n          \"cover_medium\": \"https://cdn-images.dzcdn.net/images/cover/be682506145061814eddee648edb7c59/250x250-000000-80-0-0.jpg\",\n          \"cover_big\": \"https://cdn-images.dzcdn.net/images/cover/be682506145061814eddee648edb7c59/500x500-000000-80-0-0.jpg\",\n          \"cover_xl\": \"https://cdn-images.dzcdn.net/images/cover/be682506145061814eddee648edb7c59/1000x1000-000000-80-0-0.jpg\",\n          \"md5_image\": \"be682506145061814eddee648edb7c59\",\n          \"tracklist\": \"https://api.deezer.com/album/595243/tracks\",\n          \"type\": \"album\"\n        },\n        \"type\": \"track\"\n      }\n    ],\n    \"total\": 206,\n    \"prev\": \"https://api.deezer.com/search?q=Eminem&limit=9&index=1\",\n    \"next\": \"https://api.deezer.com/search?q=Eminem&limit=9&index=19\"\n  }\n]",
+        "height": 400
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        672,
+        -400
+      ],
+      "typeVersion": 1,
+      "id": "1479d9ca-96fd-4f15-b969-2c68280aaaa8",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "Handles \"Load more results\" (dzmore) for Deezer music search.\n\nLogic flow:\nStep\tAction\n1\tGets Deezer search results\n2\tNo tracks → send error message\n3\tBuilds track buttons for current page\n4\tMore tracks available → add \"More…\" button with new offset\n5\tReturns message with cover art + buttons\nKey variables:\nVariable\tDescription\noffset\tStarting point for results\ntracks.length\tCurrent page results count\ntotal\tTotal results available",
+        "height": 352,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        144,
+        432
+      ],
+      "typeVersion": 1,
+      "id": "07dfe04a-7c8d-4793-943e-7098d11f4ab1",
+      "name": "Sticky Note4"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Parse dzmore callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse dzmore callback": {
+      "main": [
+        [
+          {
+            "node": "Deezer  Norm text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deezer Search": {
+      "main": [
+        [
+          {
+            "node": "Build keyboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build keyboard": {
+      "main": [
+        [
+          {
+            "node": "Send results to user",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send results to user": {
+      "main": [
+        [
+          {
+            "node": "Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deezer  Norm text": {
+      "main": [
+        [
+          {
+            "node": "Deezer Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "87646829-6371-4c89-8ce6-8f6fe7d56f7b",
+  "meta": {
+    "instanceId": "148b2b278c24b3c49bc4399db7e7ce15ed94f5b1044d28401c56f6ab511f0347"
+  },
+  "id": "5ykQQ8OtwheWIJnq",
+  "tags": []
+}
