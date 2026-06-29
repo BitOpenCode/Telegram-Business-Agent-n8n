@@ -165,4 +165,4 @@ brew install ffmpeg
 
 ---
 
-**Version:** 1.0 | **Last Updated:** 2026-06-29
+**Version:** 1.1 | **Last Updated:** 2026-06-29
