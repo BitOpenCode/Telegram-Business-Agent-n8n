@@ -1,0 +1,593 @@
+{
+  "name": "Download track",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -752,
+        1408
+      ],
+      "id": "dc1dab81-47a4-47c2-a886-d860a99226e8",
+      "name": "No Operation, do nothing8"
+    },
+    {
+      "parameters": {
+        "command": "=yt-dlp -x --audio-format mp3 --audio-quality 128K -o \"{{ $('Code fallback').first().json.output_path }}\" \"{{ $('Code fallback').first().json.stream_url }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -1616,
+        592
+      ],
+      "id": "c7011c37-4cc3-4f77-b702-d9eb78eec8a3",
+      "name": "Execute Command",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $('Code fallback').first().json.output_path }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        -1616,
+        832
+      ],
+      "id": "7da7c7e9-8d40-4c89-b949-d86fc04be977",
+      "name": "Read/Write Files from Disk"
+    },
+    {
+      "parameters": {
+        "jsCode": "const parseNode = $('Parse dz callback').item.json;\nconst trackId = parseNode.track_id;\nconst chatId = parseNode.chat_id;\n\nreturn [{\n  json: {\n    track_id: trackId,\n    chat_id: chatId,\n    deezer_track_url: `https://api.deezer.com/track/${trackId}`,\n    songlink_url: `https://api.song.link/v1-alpha.1/links?url=https://www.deezer.com/track/${trackId}&userCountry=US&songIfSingle=true`\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1264,
+        64
+      ],
+      "id": "7fcc3025-c548-46a8-9d39-9d2eb2fc4ae5",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -2016,
+        64
+      ],
+      "id": "35262cf8-cf96-4d62-9cd4-338d0e703b38",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body;\nconst callback = body.callback_query;\nconst message = callback.message;\nconst chatId = message.chat.id;\nconst messageId = message.message_id;\nconst from = callback.from;\nconst username = from.username || null;\nconst firstName = from.first_name || '';\nconst lastName = from.last_name || '';\nconst isPremium = from.is_premium || false;\nconst languageCode = from.language_code || 'en';\nconst callbackData = callback.data || '';\n\n// ✅ business_connection_id из message\nconst businessConnectionId = message.business_connection_id || null;\n\nconst parts = callbackData.split('|');\nconst trackId = parts[1];\n\nreturn [{\n  json: {\n    chat_id: chatId,\n    message_id: messageId,\n    username: username,\n    first_name: firstName,\n    last_name: lastName,\n    is_premium: isPremium,\n    language_code: languageCode,\n    track_id: trackId,\n    callback_data: callbackData,\n    business_connection_id: businessConnectionId\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1728,
+        64
+      ],
+      "id": "a69e2b72-fd23-4c87-98c0-8ba033a3b7e7",
+      "name": "Parse dz callback"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.songlink_url }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -624,
+        64
+      ],
+      "id": "c08df80f-2428-4f58-a761-5f310c72d8fb",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.deezer.com/track/{{ $('Code').item.json.track_id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2000,
+        304
+      ],
+      "id": "7b926c4f-b26d-427e-9d3c-29af0ec30bb6",
+      "name": "HTTP Request Deezer"
+    },
+    {
+      "parameters": {
+        "jsCode": "const songlink = $('HTTP Request').first().json;\nconst deezer = $('HTTP Request Deezer').first().json;\nconst trackId = deezer.id;\nconst trackName = deezer.title;\nconst artistName = deezer.artist.name;\n\nconst platforms = songlink.linksByPlatform || {};\n\n// Check direct links\nconst youtubeUrl = platforms.youtube?.url;\nconst soundcloudUrl = platforms.soundcloud?.url;\n\nlet streamUrl = youtubeUrl || soundcloudUrl;\nlet source = youtubeUrl ? 'YouTube' : (soundcloudUrl ? 'SoundCloud' : null);\n\n// If no direct links then use YouTube via yt-dlp\nif (!streamUrl) {\n  const searchQuery = `${artistName} - ${trackName} official audio`;\n  streamUrl = `ytsearch:${searchQuery}`;\n  source = 'YouTube (via yt-dlp search)';\n  console.log(`No direct YouTube/SoundCloud URL for track ${trackId}. Using YouTube search: \"${searchQuery}\"`);\n}\n\nreturn [{\n  json: {\n    stream_url: streamUrl,\n    track_id: String(trackId),\n    output_path: `/tmp/ps_${trackId}.mp3`,\n    source: source,\n    track_name: trackName,\n    artist_name: artistName\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1280,
+        304
+      ],
+      "id": "ea50f220-6b7a-4135-81e6-cf6bf8de4846",
+      "name": "Code fallback"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst deezer = $('HTTP Request Deezer').first().json;\nconst songlink = $('HTTP Request').first().json;\n\nconst youtubeEntity = Object.values(songlink.entitiesByUniqueId || {})\n  .find(e => e.apiProvider === 'youtube');\n\nconst correctArtistName = youtubeEntity?.artistName \n  || Object.values(songlink.entitiesByUniqueId || {})\n      .find(e => e.apiProvider !== 'deezer')?.artistName\n  || deezer.artist.name; \n\nconst correctTitle = youtubeEntity?.title || deezer.title;\n\nfor (const item of items) {\n  if (item.binary?.data) {\n    item.binary.audio = item.binary.data;\n    delete item.binary.data;\n    item.binary.audio.fileName = `${correctArtistName} - ${correctTitle}.mp3`;\n    item.binary.audio.mimeType = 'audio/mpeg';\n  }\n}\nreturn items;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1616,
+        1088
+      ],
+      "id": "a0d4b1d6-ddf0-4ac4-88cf-c1b96286be44",
+      "name": "Code Give Correct Name to File"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('HTTP Request Deezer').first().json.album.cover_medium }}",
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1456,
+        1088
+      ],
+      "id": "29314210-3ee7-49a1-b434-844d72753af5",
+      "name": "HTTP Request Get Image for File"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst deezer = $('HTTP Request Deezer').first().json;\nconst songlink = $('HTTP Request').first().json;\nconst chatId = $('Parse dz callback').first().json.chat_id;  \n\nconst youtubeEntity = Object.values(songlink.entitiesByUniqueId || {})\n  .find(e => e.apiProvider === 'youtube');\n\nconst correctArtistName = youtubeEntity?.artistName \n  || Object.values(songlink.entitiesByUniqueId || {})\n      .find(e => e.apiProvider !== 'deezer')?.artistName\n  || deezer.artist.name;\n\nconst correctTitle = youtubeEntity?.title || deezer.title;\n\nfor (const item of items) {\n  if (item.binary?.data) {\n    item.binary.thumbnail = item.binary.data;\n    delete item.binary.data;\n    item.binary.thumbnail.fileName = 'cover.jpg';\n    item.binary.thumbnail.mimeType = 'image/jpeg';\n  }\n\n  item.json = {\n    chat_id: String(chatId),\n    title: correctTitle,\n    performer: correctArtistName,\n    duration: String(deezer.duration)\n  };\n}\nreturn items;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1040,
+        1088
+      ],
+      "id": "48dfe7fa-4a1d-4380-b490-7e18139518be",
+      "name": "Prepare Thumbnail",
+      "notes": "Converts the incoming binary field from data to thumbnail, renames the file to cover.jpg, and sets its MIME type to image/jpeg. This is typically used to attach an album cover image to an audio message before sending it to Telegram."
+    },
+    {
+      "parameters": {
+        "command": "=rm -f {{ $('Code fallback').first().json.output_path }}"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -1616,
+        1408
+      ],
+      "id": "1cea1772-708c-4c17-be5c-e7d378b5446f",
+      "name": "Execute Command Delete file from Server"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/botYOUR_BOT_TOKEN/sendAudio",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $('Parse dz callback').item.json.chat_id }}"
+            },
+            {
+              "name": "business_connection_id",
+              "value": "={{ $('Parse dz callback').item.json.business_connection_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "title",
+              "value": "={{ $('Prepare Thumbnail').item.json.title }}"
+            },
+            {
+              "name": "performer",
+              "value": "={{ $('Prepare Thumbnail').item.json.performer }}"
+            },
+            {
+              "name": "duration",
+              "value": "={{ $('Prepare Thumbnail').item.json.duration }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "audio",
+              "inputDataFieldName": "audio"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "thumbnail",
+              "inputDataFieldName": "thumbnail"
+            },
+            {
+              "name": "caption",
+              "value": "PocketAgent"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -768,
+        1088
+      ],
+      "id": "ba8d3a35-1028-4f37-bbb2-9108e3fbfa04",
+      "name": "Send Music to user"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/botYOUR_BOT_TOKEN/sendMessage",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $('Parse dz callback').first().json.chat_id }}"
+            },
+            {
+              "name": "text",
+              "value": "=❌ Song not found.\n\nUnfortunately, this track is not available in our library and could not be downloaded."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1040,
+        608
+      ],
+      "id": "3ff4709a-7f14-4614-9c21-191bfaa5337f",
+      "name": "Send Unavailable Message1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -752,
+        608
+      ],
+      "id": "4c145603-71d0-462e-a383-417a5538a800",
+      "name": "No Operation, do nothing"
+    },
+    {
+      "parameters": {
+        "content": "This code processes a Telegram callback query (when a user clicks an inline button).\n\nUsed in a music flow bot — when a user clicks a track button, this extracts the track_id and passes it to the download workflow.",
+        "height": 192,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1808,
+        -128
+      ],
+      "typeVersion": 1,
+      "id": "c72f3841-998e-4f65-b5d5-accac45476a4",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "This is a preparatory node — it takes the track_id from the callback parser and builds the API URLs needed to download the track.\n\nconst parseNode = $('Parse dz callback').item.json;\tGets data from the previous node\nconst trackId = parseNode.track_id;\tExtracts the Deezer track ID\nconst chatId = parseNode.chat_id;\tGets chat ID for sending the response\ndeezer_track_url\tBuilds Deezer API URL for track metadata\nsonglink_url\tBuilds Song.link API URL to get streaming links (Spotify, Apple Music, YouTube, etc.)",
+        "height": 192,
+        "width": 656,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1472,
+        -128
+      ],
+      "typeVersion": 1,
+      "id": "af72157d-c526-471f-b5a0-d2ec97039a3f",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "[\n  {\n    \"entityUniqueId\": \"DEEZER_SONG::1109731\",\n    \"userCountry\": \"US\",\n    \"pageUrl\": \"https://song.link/d/1109731\",\n    \"entitiesByUniqueId\": {\n      \"AMAZON_SONG::B001NY9XUA\": {\n        \"id\": \"B001NY9XUA\",\n        \"type\": \"song\",\n        \"title\": \"Lose Yourself (Soundtrack Version) (Explicit)\",\n        \"artistName\": \"Eminem\",\n        \"thumbnailUrl\": \"https://m.media-amazon.com/images/I/51GOecGYHVL.jpg\",\n        \"thumbnailWidth\": 500,\n        \"thumbnailHeight\": 497,\n        \"apiProvider\": \"amazon\",\n        \"platforms\": [\n          \"amazonMusic\",\n          \"amazonStore\"\n        ]\n      },\n      \"ANGHAMI_SONG::16581915\": {\n        \"id\": \"16581915\",\n        \"type\": \"song\",\n        \"title\": \"Lose Yourself\",\n        \"artistName\": \"Eminem\",\n        \"thumbnailUrl\": \"https://artwork.anghcdn.co/cover/2103296/320\",\n        \"thumbnailWidth\": 1024,\n        \"thumbnailHeight\": 1024,\n        \"apiProvider\": \"anghami\",\n        \"platforms\": [\n          \"anghami\"\n        ]\n      },\n      \"BOOMPLAY_SONG::2146156\": {\n        \"id\": \"2146156\",\n        \"type\": \"song\",\n        \"title\": \"Lose Yourself\",\n        \"artistName\": \"Eminem\",\n        \"thumbnailUrl\": \"https://source.boomplaymusic.com/group10/M00/31/89/61b9e6432d024a1eb8f49be0ad27a2ff_464_464.jpg\",\n        \"thumbnailWidth\": 464,\n        \"thumbnailHeight\": 464,\n        \"apiProvider\": \"boomplay\",\n        \"platforms\": [\n          \"boomplay\"\n        ]\n      },\n      \"DEEZER_SONG::1109731\": {\n        \"id\": \"1109731\",\n        \"type\": \"song\",\n        \"title\": \"Lose Yourself\",\n        \"artistName\": \"Eminem\",\n        \"thumbnailUrl\": \"http://cdn-images.dzcdn.net/images/cover/e2b36a9fda865cb2e9ed1476b6291a7d/500x500-000000-80-0-0.jpg\",\n        \"thumbnailWidth\": 500,\n        \"thumbnailHeight\": 500,\n        \"apiProvider\": \"deezer\",\n        \"platforms\": [\n          \"deezer\"\n        ]\n      },\n      \"NAPSTER_SONG::tra.168631296\": {\n        \"id\": \"tra.168631296\",\n        \"type\": \"song\",\n        \"title\": \"Lose Yourself\",\n        \"artistName\": \"Eminem\",\n        \"thumbnailUrl\": \"https://direct.rhapsody.com/imageserver/images/alb.168631281/385x385.jpeg\",\n        \"thumbnailWidth\": 385,\n        \"thumbnailHeight\": 385,\n        \"apiProvider\": \"napster\",\n        \"platforms\": [\n          \"napster\"\n        ]\n      },\n      \"PANDORA_SONG::TR:15617881\": {\n        \"id\": \"TR:15617881\",\n        \"type\": \"song\",\n        \"title\": \"Lose Yourself\",\n        \"artistName\": \"Eminem\",\n        \"thumbnailUrl\": \"https://content-images.p-cdn.com/images/ef/a1/12/dc/74c2429aa9e27a608ec26e29/_500W_500H.jpg\",\n        \"thumbnailWidth\": 500,\n        \"thumbnailHeight\": 500,\n        \"apiProvider\": \"pandora\",\n        \"platforms\": [\n          \"pandora\"\n        ]\n      },\n      \"TIDAL_SONG::622469\": {\n        \"id\": \"622469\",\n        \"type\": \"song\",\n        \"title\": \"Lose Yourself\",\n        \"artistName\": \"Eminem\",\n        \"thumbnailUrl\": \"https://resources.tidal.com/images/0dcede74/a69f/488c/b8c3/2b28d32aed0d/640x640.jpg\",\n        \"thumbnailWidth\": 640,\n        \"thumbnailHeight\": 640,\n        \"apiProvider\": \"tidal\",\n        \"platforms\": [\n          \"tidal\"\n        ]\n      }\n    },\n    \"linksByPlatform\": {\n      \"amazonMusic\": {\n        \"country\": \"US\",\n        \"url\": \"https://music.amazon.com/albums/B001NYCW7Q?trackAsin=B001NY9XUA\",\n        \"entityUniqueId\": \"AMAZON_SONG::B001NY9XUA\"\n      },\n      \"amazonStore\": {\n        \"country\": \"US\",\n        \"url\": \"https://amazon.com/dp/B001NY9XUA\",\n        \"entityUniqueId\": \"AMAZON_SONG::B001NY9XUA\"\n      },\n      \"anghami\": {\n        \"country\": \"US\",\n        \"url\": \"https://play.anghami.com/song/16581915?refer=linktree\",\n        \"entityUniqueId\": \"ANGHAMI_SONG::16581915\"\n      },\n      \"boomplay\": {\n        \"country\": \"US\",\n        \"url\": \"https://www.boomplay.com/songs/2146156\",\n        \"entityUniqueId\": \"BOOMPLAY_SONG::2146156\"\n      },\n      \"napster\": {\n        \"country\": \"US\",\n        \"url\": \"https://play.napster.com/track/tra.168631296\",\n        \"entityUniqueId\": \"NAPSTER_SONG::tra.168631296\"\n      },\n      \"pandora\": {\n        \"country\": \"US\",\n        \"url\": \"https://www.pandora.com/TR:15617881\",\n        \"entityUniqueId\": \"PANDORA_SONG::TR:15617881\"\n      },\n      \"tidal\": {\n        \"country\": \"US\",\n        \"url\": \"https://listen.tidal.com/track/622469\",\n        \"entityUniqueId\": \"TIDAL_SONG::622469\"\n      },\n      \"deezer\": {\n        \"country\": \"US\",\n        \"url\": \"https://www.deezer.com/track/1109731\",\n        \"entityUniqueId\": \"DEEZER_SONG::1109731\"\n      }\n    }\n  }\n]",
+        "height": 2960,
+        "width": 512
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -512,
+        -160
+      ],
+      "typeVersion": 1,
+      "id": "8671a9df-9564-4149-8e54-e88f300d46b6",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "https://api.deezer.com/track/1109731",
+        "width": 320,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2096,
+        256
+      ],
+      "typeVersion": 1,
+      "id": "c0183281-7938-4330-9fe4-8ba9a6651975",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "[\n  {\n    \"id\": 1109731,\n    \"readable\": true,\n    \"title\": \"Lose Yourself\",\n    \"title_short\": \"Lose Yourself\",\n    \"title_version\": \"\",\n    \"isrc\": \"USIR10211559\",\n    \"link\": \"https://www.deezer.com/track/1109731\",\n    \"share\": \"https://www.deezer.com/track/1109731?utm_source=deezer&utm_content=track-1109731&utm_term=0_1782734623&utm_medium=web\",\n    \"duration\": 326,\n    \"track_position\": 6,\n    \"disk_number\": 1,\n    \"rank\": 980436,\n    \"release_date\": \"2005-11-21\",\n    \"explicit_lyrics\": true,\n    \"explicit_content_lyrics\": 1,\n    \"explicit_content_cover\": 0,\n    \"preview\": \"https://cdnt-preview.dzcdn.net/api/1/1/2/7/a/0/27a14827ff1e82c5e40e8b6a934a8637.mp3?hdnea=exp=1782735523~acl=/api/1/1/2/7/a/0/27a14827ff1e82c5e40e8b6a934a8637.mp3*~data=user_id=0,application_id=42~hmac=569eae72fb6cf3ff258b6efdf6bc731acb52e043e1a73d27e8af90af374e40dd\",\n    \"bpm\": 171.6,\n    \"gain\": -8.3,\n    \"available_countries\": [\n      \"AE\",\n      \"AF\",\n      \"AG\",\n      \"AI\",\n      \"AL\",\n      \"AM\",\n      \"AO\",\n      \"AQ\",\n      \"AR\",\n      \"AS\",\n      \"AT\",\n      \"AU\",\n      \"AZ\",\n      \"BA\",\n      \"BB\",\n      \"BD\",\n      \"BE\",\n      \"BF\",\n      \"BG\",\n      \"BH\",\n      \"BI\",\n      \"BJ\",\n      \"BN\",\n      \"BO\",\n      \"BQ\",\n      \"BR\",\n      \"BT\",\n      \"BV\",\n      \"BW\",\n      \"BY\",\n      \"CA\",\n      \"CC\",\n      \"CD\",\n      \"CF\",\n      \"CG\",\n      \"CH\",\n      \"CI\",\n      \"CK\",\n      \"CL\",\n      \"CM\",\n      \"CO\",\n      \"CR\",\n      \"CU\",\n      \"CV\",\n      \"CW\",\n      \"CX\",\n      \"CY\",\n      \"CZ\",\n      \"DE\",\n      \"DJ\",\n      \"DK\",\n      \"DM\",\n      \"DO\",\n      \"DZ\",\n      \"EC\",\n      \"EE\",\n      \"EG\",\n      \"EH\",\n      \"ER\",\n      \"ES\",\n      \"ET\",\n      \"FI\",\n      \"FJ\",\n      \"FK\",\n      \"FM\",\n      \"FR\",\n      \"GA\",\n      \"GB\",\n      \"GD\",\n      \"GE\",\n      \"GH\",\n      \"GM\",\n      \"GN\",\n      \"GQ\",\n      \"GR\",\n      \"GS\",\n      \"GT\",\n      \"GU\",\n      \"GW\",\n      \"HK\",\n      \"HM\",\n      \"HN\",\n      \"HR\",\n      \"HU\",\n      \"ID\",\n      \"IE\",\n      \"IL\",\n      \"IN\",\n      \"IQ\",\n      \"IR\",\n      \"IS\",\n      \"IT\",\n      \"JM\",\n      \"JO\",\n      \"JP\",\n      \"KE\",\n      \"KG\",\n      \"KH\",\n      \"KI\",\n      \"KM\",\n      \"KN\",\n      \"KP\",\n      \"KR\",\n      \"KW\",\n      \"KY\",\n      \"KZ\",\n      \"LA\",\n      \"LB\",\n      \"LC\",\n      \"LK\",\n      \"LR\",\n      \"LS\",\n      \"LT\",\n      \"LU\",\n      \"LV\",\n      \"LY\",\n      \"MA\",\n      \"MD\",\n      \"ME\",\n      \"MG\",\n      \"MH\",\n      \"MK\",\n      \"ML\",\n      \"MM\",\n      \"MN\",\n      \"MP\",\n      \"MR\",\n      \"MS\",\n      \"MT\",\n      \"MU\",\n      \"MV\",\n      \"MW\",\n      \"MX\",\n      \"MY\",\n      \"MZ\",\n      \"NA\",\n      \"NE\",\n      \"NF\",\n      \"NG\",\n      \"NI\",\n      \"NL\",\n      \"NO\",\n      \"NP\",\n      \"NR\",\n      \"NU\",\n      \"NZ\",\n      \"OM\",\n      \"PA\",\n      \"PE\",\n      \"PG\",\n      \"PH\",\n      \"PK\",\n      \"PL\",\n      \"PN\",\n      \"PS\",\n      \"PT\",\n      \"PW\",\n      \"PY\",\n      \"QA\",\n      \"RO\",\n      \"RS\",\n      \"RU\",\n      \"RW\",\n      \"SA\",\n      \"SB\",\n      \"SC\",\n      \"SD\",\n      \"SE\",\n      \"SG\",\n      \"SI\",\n      \"SJ\",\n      \"SK\",\n      \"SL\",\n      \"SN\",\n      \"SO\",\n      \"ST\",\n      \"SV\",\n      \"SX\",\n      \"SY\",\n      \"SZ\",\n      \"TC\",\n      \"TD\",\n      \"TG\",\n      \"TH\",\n      \"TJ\",\n      \"TK\",\n      \"TL\",\n      \"TM\",\n      \"TN\",\n      \"TO\",\n      \"TR\",\n      \"TV\",\n      \"TZ\",\n      \"UA\",\n      \"UG\",\n      \"US\",\n      \"UY\",\n      \"UZ\",\n      \"VC\",\n      \"VE\",\n      \"VG\",\n      \"VI\",\n      \"VN\",\n      \"VU\",\n      \"WS\",\n      \"YE\",\n      \"ZA\",\n      \"ZM\",\n      \"ZW\"\n    ],\n    \"contributors\": [\n      {\n        \"id\": 13,\n        \"name\": \"Eminem\",\n        \"link\": \"https://www.deezer.com/artist/13\",\n        \"share\": \"https://www.deezer.com/artist/13?utm_source=deezer&utm_content=artist-13&utm_term=0_1782734623&utm_medium=web\",\n        \"picture\": \"https://api.deezer.com/artist/13/image\",\n        \"picture_small\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/56x56-000000-80-0-0.jpg\",\n        \"picture_medium\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/250x250-000000-80-0-0.jpg\",\n        \"picture_big\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/500x500-000000-80-0-0.jpg\",\n        \"picture_xl\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/1000x1000-000000-80-0-0.jpg\",\n        \"radio\": true,\n        \"tracklist\": \"https://api.deezer.com/artist/13/top?limit=50\",\n        \"type\": \"artist\",\n        \"role\": \"Main\"\n      }\n    ],\n    \"md5_image\": \"e2b36a9fda865cb2e9ed1476b6291a7d\",\n    \"track_token\": \"AAAAAWpCXx9qQ3hfKfBUf-qe3PILamOGli05ioPW2IjOHa99J87HJ2VqCoKo5LwvrwzFhJYdWuOh6FezoLWKhAfYiuZa9DccrKDJ38ls2gkoY2r-1Zo8QkkvLbUvg83wIf1ForY68gg_fqsF9OY07_CE2DbVKlO0wMKwyzoG5LKkDbQhK1N1d4evQvIyXJ8_9fYGgwKel4C-7ObACo3CuhvXf706Sm1KsldEgXBtFXD2e5-yVJ2OB54inOrHAwFg2gBffmSYXVd-s8r6-xaRWLkPM7XTXxvsoFbUk9J3RjNjBHpwEBpL-Vwyqsd_1CxaYSXHmMVATVJeGbtn2eeIf8lJ6HJcjtvRX7mW3K3A9cRlVFDXhibIOzQ3UnjHVXReHj5zggOylkR4NftFWZPq9iLYyv2tLCu5FbFkBhPCKOXAt7NIF_6x1PZdsAOW7jlJ4XEj5lW7FAztikDjVoFrhJMhUuGw4TzjatvNKw\",\n    \"artist\": {\n      \"id\": 13,\n      \"name\": \"Eminem\",\n      \"link\": \"https://www.deezer.com/artist/13\",\n      \"share\": \"https://www.deezer.com/artist/13?utm_source=deezer&utm_content=artist-13&utm_term=0_1782734623&utm_medium=web\",\n      \"picture\": \"https://api.deezer.com/artist/13/image\",\n      \"picture_small\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/56x56-000000-80-0-0.jpg\",\n      \"picture_medium\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/250x250-000000-80-0-0.jpg\",\n      \"picture_big\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/500x500-000000-80-0-0.jpg\",\n      \"picture_xl\": \"https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/1000x1000-000000-80-0-0.jpg\",\n      \"radio\": true,\n      \"tracklist\": \"https://api.deezer.com/artist/13/top?limit=50\",\n      \"type\": \"artist\"\n    },\n    \"album\": {\n      \"id\": 119606,\n      \"title\": \"Curtain Call: The Hits\",\n      \"link\": \"https://www.deezer.com/album/119606\",\n      \"cover\": \"https://api.deezer.com/album/119606/image\",\n      \"cover_small\": \"https://cdn-images.dzcdn.net/images/cover/e2b36a9fda865cb2e9ed1476b6291a7d/56x56-000000-80-0-0.jpg\",\n      \"cover_medium\": \"https://cdn-images.dzcdn.net/images/cover/e2b36a9fda865cb2e9ed1476b6291a7d/250x250-000000-80-0-0.jpg\",\n      \"cover_big\": \"https://cdn-images.dzcdn.net/images/cover/e2b36a9fda865cb2e9ed1476b6291a7d/500x500-000000-80-0-0.jpg\",\n      \"cover_xl\": \"https://cdn-images.dzcdn.net/images/cover/e2b36a9fda865cb2e9ed1476b6291a7d/1000x1000-000000-80-0-0.jpg\",\n      \"md5_image\": \"e2b36a9fda865cb2e9ed1476b6291a7d\",\n      \"release_date\": \"2005-01-01\",\n      \"tracklist\": \"https://api.deezer.com/album/119606/tracks\",\n      \"type\": \"album\"\n    },\n    \"type\": \"track\"\n  }\n]",
+        "height": 736,
+        "width": 320
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2096,
+        416
+      ],
+      "typeVersion": 1,
+      "id": "1a2f513d-af00-4801-8a68-2a9c3da971d9",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "content": "This is a stream URL resolver — it takes track data from Deezer and Song.link APIs, finds the best available streaming source, and prepares everything for downloading.",
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1168,
+        256
+      ],
+      "typeVersion": 1,
+      "id": "78180ce6-64a0-46b1-a9ea-ef6e3771ac4b",
+      "name": "Sticky Note5"
+    },
+    {
+      "parameters": {
+        "content": "yt-dlp -x --audio-format mp3 --audio-quality 128K -o \"{{ $('Code fallback').first().json.output_path }}\" \"{{ $('Code fallback').first().json.stream_url }}\"",
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1456,
+        528
+      ],
+      "typeVersion": 1,
+      "id": "b08e8f01-8efb-4694-92de-5598d9033165",
+      "name": "Sticky Note6"
+    },
+    {
+      "parameters": {
+        "content": "This code renames the downloaded audio file and prepares cover art for sending to Telegram.",
+        "height": 96,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1472,
+        992
+      ],
+      "typeVersion": 1,
+      "id": "f0f1b5d8-0558-4dbc-8ec3-62c742572789",
+      "name": "Sticky Note7"
+    },
+    {
+      "parameters": {
+        "content": "This code prepares cover art thumbnail and adds track metadata to the audio file before sending to Telegram.",
+        "height": 96,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1104,
+        992
+      ],
+      "typeVersion": 1,
+      "id": "2c5e02ea-d993-49ee-a063-f126c11bebb6",
+      "name": "Sticky Note8"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Execute Command": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Unavailable Message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk": {
+      "main": [
+        [
+          {
+            "node": "Code Give Correct Name to File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Parse dz callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse dz callback": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request Deezer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request Deezer": {
+      "main": [
+        [
+          {
+            "node": "Code fallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code fallback": {
+      "main": [
+        [
+          {
+            "node": "Execute Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code Give Correct Name to File": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request Get Image for File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request Get Image for File": {
+      "main": [
+        [
+          {
+            "node": "Prepare Thumbnail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Thumbnail": {
+      "main": [
+        [
+          {
+            "node": "Send Music to user",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Command Delete file from Server": {
+      "main": [
+        [
+          {
+            "node": "No Operation, do nothing8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Music to user": {
+      "main": [
+        [
+          {
+            "node": "Execute Command Delete file from Server",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Unavailable Message1": {
+      "main": [
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "ad8bf9de-f269-4d30-a43b-b88cc682b984",
+  "meta": {
+    "instanceId": "148b2b278c24b3c49bc4399db7e7ce15ed94f5b1044d28401c56f6ab511f0347"
+  },
+  "id": "QAP8YR6DiB4RhH19",
+  "tags": []
+}
