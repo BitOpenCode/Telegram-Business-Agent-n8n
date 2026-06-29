@@ -8,22 +8,22 @@
 
 ---
 
-## ✨ Key Features
+##  Key Features
 
 | Feature | Description |
 |---------|-------------|
-| 🤖 **AI-Powered Secretary** | Uses OpenRouter AI (Hermes 405B) to understand and respond to messages |
-| 📞 **Call Booking** | Integrates with Calendly for automated meeting scheduling |
-| 💰 **Crypto & Forex Rates** | Real-time price checks from Binance and TradingView |
-| 🎵 **Music Search** | Find and download tracks from Deezer |
-| 🎨 **ART Generator** | Create 3D T-shirt mockups from photos |
-| 🚨 **Urgent Message Handling** | Priority routing for important communications |
-| 🧠 **Conversation Memory** | Remembers context per user |
-| 🌍 **Multi-language** | Responds in the user's language |
+|  **AI-Powered Secretary** | Uses OpenRouter AI (Hermes 405B) to understand and respond to messages |
+|  **Call Booking** | Integrates with Calendly for automated meeting scheduling |
+|  **Crypto & Forex Rates** | Real-time price checks from Binance and TradingView |
+|  **Music Search** | Find and download tracks from Deezer |
+|  **ART Generator** | Create 3D T-shirt mockups from photos |
+|  **Urgent Message Handling** | Priority routing for important communications |
+|  **Conversation Memory** | Remembers context per user |
+|  **Multi-language** | Responds in the user's language |
 
 ---
 
-## 🎯 What Problem Does It Solve?
+## What Problem Does It Solve?
 
 | Problem | Solution |
 |---------|----------|
@@ -39,6 +39,7 @@
 
 ## 📁 Project Structure
 
+```
 Secretary/
 ├── Secretary Agent.json              # MAIN WORKFLOW (always active)
 ├── Message PocketAI.json             # AI secretary & call booking
@@ -53,10 +54,11 @@ Secretary/
 ├── Message /calls button.json        # /calls button handler
 ├── Email sent by user.json           # Email input handler
 └── README.md                         # This file
+```
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -97,19 +99,19 @@ Secretary/
    - **Bot Permissions:** Read, Reply, Mark messages as Read
 
 5. **Start Your Bot**
-   - Open t.me/your_bot_name
+   - Open `t.me/your_bot_name`
    - Click "Start"
 
 ---
 
-## 🛠️ Installation Guide
+## Installation 
 
 ### Step 1: Import Workflows
 
 1. Open n8n
 2. Go to **Workflows** → **Import from File**
 3. Import all JSON files in this order:
-   - `Secretary Agent.json` (main)
+   - `Secretary Agent V1.1.json` (main)
    - `Message PocketAI.json`
    - `TOP 10 Crypto.json`
    - `TOP 10 Currency Rates.json`
@@ -133,9 +135,7 @@ Secretary/
 
 In all HTTP Request nodes, replace `YOUR_BOT_TOKEN` with your actual token:
 
-```
 https://api.telegram.org/botYOUR_TOKEN_HERE/sendMessage
-```
 
 ### Step 4: Set Webhook
 
@@ -143,9 +143,7 @@ https://api.telegram.org/botYOUR_TOKEN_HERE/sendMessage
 2. Find **Telegram Webhook** node → Copy the **Path**
 3. Execute the **Set Telegram Webhook** node with:
 
-```
 https://api.telegram.org/botYOUR_TOKEN/setWebhook?url=https://YOUR_N8N_DOMAIN/webhook/YOUR_PATH
-```
 
 ### Step 5: Activate Main Workflow
 
@@ -157,15 +155,14 @@ Toggle **Secretary Agent** workflow to **Active** (green).
 
 | Command | What It Does |
 |---------|--------------|
-| `Дай курсы криптовалют` | Shows top 10 crypto prices |
-| `Дай курсы валют` | Shows 10 forex pairs |
-| `Курс BTC/USDT` | Specific crypto price + TradingView chart |
-| `Курс USD/RUB` | Specific forex rate + chart |
+| `Give me crypto rates` | Shows top 10 crypto prices |
+| `Give me currency rates` | Shows 10 forex pairs |
+| `Rate BTC/USDT` | Specific crypto price + TradingView chart |
+| `Rate USD/GBP` | Specific forex rate + chart |
 | `Music Travis Scott` | Search and display tracks from Deezer |
 | `Музыка Eminem` | Search and display tracks (Russian) |
-| `звонок` | Sends Calendly booking button |
-| `срочно` | Notifies creator immediately |
-| `помощь` | Shows available commands |
+| `Call` | Sends Calendly booking button |
+| `help` | Shows available commands |
 | `/calls` | Call management menu |
 
 ### Bonus: Send a photo
@@ -174,7 +171,7 @@ Send any photo → the bot will generate a 3D T-shirt mockup with your design.
 
 ---
 
-## 📊 Workflow Overview
+## Workflow Overview
 
 ### 1. Secretary Agent (Main)
 - Entry point for all messages
@@ -221,7 +218,7 @@ Send any photo → the bot will generate a 3D T-shirt mockup with your design.
 
 ---
 
-## 🔧 Required API Keys
+## Required API Keys
 
 | Service | What For | Where To Get |
 |---------|----------|--------------|
@@ -236,13 +233,13 @@ Send any photo → the bot will generate a 3D T-shirt mockup with your design.
 
 ---
 
-## 🧪 Testing Your Bot
+## Testing Your Bot
 
 After setup, test these commands in Telegram:
 
 | Test | Expected Result |
 |------|-----------------|
-| `Привет` | AI greeting |
+| `Hi` | AI greeting |
 | `Дай курсы криптовалют` | Shows BTC, ETH, etc. |
 | `Дай курсы валют` | Shows USD/RUB, EUR/USD, etc. |
 | `Курс BTC/USDT` | Shows Bitcoin price + chart link |
@@ -268,7 +265,7 @@ After setup, test these commands in Telegram:
 
 ---
 
-## 📈 What Works Without PostgreSQL?
+## What Works Without PostgreSQL?
 
 | Feature | Requires PostgreSQL? |
 |---------|---------------------|
@@ -284,7 +281,7 @@ After setup, test these commands in Telegram:
 
 ---
 
-## 🔐 Security Notes
+## Security Notes
 
 - **Bot Token** — Keep private. Delete from examples before sharing.
 - **Webhook Path** — Keep secret. Anyone with it can send messages to your bot.
@@ -293,24 +290,13 @@ After setup, test these commands in Telegram:
 
 ---
 
-## 🔮 Future Improvements
-
-- [ ] Voice message transcription
-- [ ] File handling
-- [ ] Group chat support
-- [ ] Custom AI training
-- [ ] WhatsApp integration
-- [ ] Spotify integration
-
----
-
-## 📄 License
+## License
 
 This project is for educational purposes. Modify and use as needed.
 
 ---
 
-## 🙏 Credits
+## Credits
 
 - **n8n** — Workflow automation
 - **OpenRouter** — AI models
@@ -328,4 +314,4 @@ This project is for educational purposes. Modify and use as needed.
 **Previous versions:**
 - **1.0** — 2026-05-31 — Initial release
 
-**Version:** 1.1| **Last Updated:** 2026-06-29
+**Version:** 1.1 | **Last Updated:** 2026-06-29
