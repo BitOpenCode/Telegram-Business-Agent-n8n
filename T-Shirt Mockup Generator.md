@@ -335,4 +335,3 @@ If image not found:
 ---
 
 **Version:** 1.1 | **Last Updated:** 2026-06-29
-```
