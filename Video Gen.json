@@ -1,0 +1,1195 @@
+{
+  "name": "Video Gen",
+  "nodes": [
+    {
+      "parameters": {
+        "amount": 30
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -144,
+        1248
+      ],
+      "id": "8b16e1e2-a523-4db4-ba4c-64ac5c8a8f87",
+      "name": "Wait 30 Sec1",
+      "webhookId": "972d01bb-a882-4442-861b-b670692caab5"
+    },
+    {
+      "parameters": {
+        "url": "https://api.kie.ai/api/v1/veo/record-info",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "taskId",
+              "value": "={{ $json.data.taskId }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_TOKEN"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        96,
+        1248
+      ],
+      "id": "ee8973c3-e3b6-4186-9b57-033ca51369d4",
+      "name": "Get Generated Video URL",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "UevSM89dFi9CPDiu",
+          "name": "Resend.com"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.data.successFlag }}",
+                    "rightValue": 1,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    },
+                    "id": "video-success"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "success"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "video-waiting",
+                    "leftValue": "={{ $json.data.successFlag }}",
+                    "rightValue": 0,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "generating"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "video-fail",
+                    "leftValue": "={{ $json.data.successFlag }}",
+                    "rightValue": 2,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "fail"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        320,
+        1232
+      ],
+      "id": "e8c250e2-0134-4f14-b7e3-c2b70ccd8661",
+      "name": "Switch1"
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -1072,
+        480
+      ],
+      "id": "3097b9a3-b811-49b1-97cb-4e95e6c8aa0e",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body;\nlet chatId = null;\nlet messageId = null;\nlet userId = null;\nlet username = null;\nlet firstName = null;\nlet lastName = null;\nlet isPremium = false;\nlet languageCode = 'en';\nlet searchText = null;\nlet businessConnectionId = null;\nlet photo = null;\nlet photoFileId = null;\nlet photoFileUniqueId = null;\nlet photoFileSize = null;\nlet photoWidth = null;\nlet photoHeight = null;\nlet caption = null;  // ← добавили\n\nconst message = body.message || body.business_message;\n\nif (message) {\n  chatId = message.chat.id;\n  messageId = message.message_id;\n  \n  if (message.from) {\n    userId = message.from.id;\n    username = message.from.username || null;\n    firstName = message.from.first_name || '';\n    lastName = message.from.last_name || '';\n    isPremium = message.from.is_premium || false;\n    languageCode = message.from.language_code || 'en';\n  }\n  \n  searchText = message.text || '';\n  caption = message.caption || null;  // ← добавили\n  \n  if (message.photo && message.photo.length > 0) {\n    const largestPhoto = message.photo[message.photo.length - 1];\n    photo = largestPhoto;\n    photoFileId = largestPhoto.file_id;\n    photoFileUniqueId = largestPhoto.file_unique_id;\n    photoFileSize = largestPhoto.file_size;\n    photoWidth = largestPhoto.width;\n    photoHeight = largestPhoto.height;\n  }\n}\n\nif (body.business_message) {\n  businessConnectionId = body.business_message.business_connection_id;\n}\n\nreturn [{\n  json: {\n    chat_id: chatId,\n    message_id: messageId,\n    user_id: userId,\n    username: username,\n    first_name: firstName,\n    last_name: lastName,\n    is_premium: isPremium,\n    language_code: languageCode,\n    search_text: searchText,\n    business_connection_id: businessConnectionId,\n    photo_file_id: photoFileId,\n    photo_file_unique_id: photoFileUniqueId,\n    photo_file_size: photoFileSize,\n    photo_width: photoWidth,\n    photo_height: photoHeight,\n    caption: caption  \n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -880,
+        480
+      ],
+      "id": "0138c0ff-3d01-4fad-99ad-fce7fc05f2dd",
+      "name": "Parse ART Command"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.imgbb.com/1/upload?key=YOUR_KEY",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "image",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "name",
+              "value": "={{ $json.result.file_unique_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -224,
+        480
+      ],
+      "id": "feb27adc-d7fb-4972-b070-d63da80b28bc",
+      "name": "Get Image URL",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "eiHt70lYxUFPtbJb",
+          "name": "imgbb AUTH"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/botYOUR_BOT_TOKEN/getFile",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "file_id",
+              "value": "={{ $json.photo_file_id }}"
+            },
+            {
+              "name": "file_unique_id",
+              "value": "={{ $json.photo_file_unique_id }}"
+            },
+            {
+              "name": "business_connection_id",
+              "value": "={{ $json.business_connection_id }}"
+            },
+            {
+              "name": "chat_id",
+              "value": "={{ $json.chat_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -688,
+        480
+      ],
+      "id": "e4a1d888-6d22-49be-8a09-95839900651a",
+      "name": "Get File TG"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.telegram.org/file/botYOUR_BOT_TOKEN/{{ $json.result.file_path }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -512,
+        480
+      ],
+      "id": "337c588b-96e5-42e6-8bda-cbd229a6ae87",
+      "name": "Download File"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer sk-or-v1-YOUR_TOKEN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"google/gemma-4-26b-a4b-it:free\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": [\n        {\n          \"type\": \"text\",\n          \"text\": \"Describe this image. Focus on colors, typography, layout, and visual details. Return a plain text description without markdown, without bold, without any formatting.\"\n        },\n        {\n          \"type\": \"image_url\",\n          \"image_url\": {\n            \"url\": \"{{ $('Get Image URL').item.json.data.url }}\"\n          }\n        }\n      ]\n    }\n  ],\n  \"max_tokens\": 300\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        80,
+        480
+      ],
+      "id": "12c40722-15a8-4344-8fa7-dc59fafe190c",
+      "name": "Analyze image AI",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "6z3XJ5LkJK6Iwxzz",
+          "name": "Analyze Image Open Router"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer sk-or-v1-YOUR_TOKEN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"google/gemini-3.1-flash-image\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a T-Shirt Mockup Prompt Builder. Output only JSON with key 'image_prompt'. Prompt must be under 150 words. Preserve the artwork exactly as described. Focus on garment realism, print quality, and professional presentation.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"=Your task is to create an image prompt following the system guidelines. Ensure that the reference image is represented as **accurately as possible**, including all text elements. Use the following inputs: {{ $('Analyze image AI').item.json.choices[0].message.content }}, user input: {{ $('Parse ART Command').item.json.caption }}\"\n    }\n  ],\n  \"max_tokens\": 300,\n  \"response_format\": { \"type\": \"json_object\" }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        304,
+        480
+      ],
+      "id": "6f32ff11-d0a9-43f1-b6ef-3967860b2039",
+      "name": "Generate Image Prompt",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "6z3XJ5LkJK6Iwxzz",
+          "name": "Analyze Image Open Router"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fields": {
+          "values": [
+            {
+              "name": "content",
+              "stringValue": "={{ $json.content }}"
+            },
+            {
+              "name": "image_url",
+              "stringValue": "={{ $('Get Image URL').item.json.data.url }}"
+            },
+            {
+              "name": "aspect_ratio",
+              "stringValue": "1:1"
+            },
+            {
+              "name": "resolution",
+              "stringValue": "1K"
+            },
+            {
+              "name": "output_format",
+              "stringValue": "png"
+            }
+          ]
+        },
+        "include": "none",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [
+        -1056,
+        848
+      ],
+      "id": "07ffbe96-d5ca-46fd-bd93-5ee6fb73c736",
+      "name": "Image Input"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/botYOUR_BOT_TOKEN/sendPhoto",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $('Parse ART Command').item.json.chat_id }}"
+            },
+            {
+              "name": "business_connection_id",
+              "value": "={{ $('Parse ART Command').item.json.business_connection_id }}"
+            },
+            {
+              "name": "reply_to_message_id",
+              "value": "={{ $('Parse ART Command').item.json.message_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"photo\": \"{{ JSON.parse($json.data.resultJson).resultUrls[0] }}\",\n  \"caption\": \"PocketAgent\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        816
+      ],
+      "id": "e2489541-625d-4b2a-a3e9-368816c3465b",
+      "name": "Send Image"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        560,
+        1008
+      ],
+      "id": "77f2755f-f761-44ef-a232-55d9447e1733",
+      "name": "No Operation, do nothing"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst content = response.choices[0].message.content;\n\nlet imagePrompt = null;\n\nif (response.choices[0].message.reasoning) {\n\n}\n\nconst jsonMatch = content.match(/\\{[\\s\\S]*\\}/);\nif (jsonMatch) {\n  try {\n    const parsed = JSON.parse(jsonMatch[0]);\n    imagePrompt = parsed.image_prompt;\n  } catch(e) {\n    imagePrompt = content\n      .replace(/\\*\\*/g, '')\n      .replace(/\\n/g, ' ')\n      .replace(/\\s+/g, ' ')\n      .trim();\n  }\n} else {\n  \n  imagePrompt = content\n    .replace(/\\*\\*/g, '')\n    .replace(/\\n/g, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\n\nif (imagePrompt === '...' || !imagePrompt) {\n  imagePrompt = '3D T-Shirt mockup of a black cotton tee with a detailed fantasy-style graphic print';\n}\n\nreturn [{\n  json: {\n    content: imagePrompt,\n    image_url: $('Get Image URL').item.json.data.url\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        544,
+        480
+      ],
+      "id": "7c29dea1-ecbf-4799-8f1a-7193c36795a3",
+      "name": "Delete AI Bullshit md"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.kie.ai/api/v1/jobs/createTask",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_TOKEN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"nano-banana-2\",\n  \"input\": {\n    \"prompt\": \"{{ $json.content }}\",\n    \"image_input\": [\n      \"{{ $json.image_url }}\"\n    ],\n    \"aspect_ratio\": \"{{ $json.aspect_ratio }}\",\n    \"resolution\": \"{{ $json.resolution }}\",\n    \"output_format\": \"{{ $json.output_format }}\"\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -656,
+        848
+      ],
+      "id": "ca6d4415-ed1d-425b-9788-867d390dcfed",
+      "name": "Generate Image - Nano Banana ",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "InGhHGhacqFAcJvw",
+          "name": "kie.ai"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 30
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -144,
+        848
+      ],
+      "id": "a55ba130-857f-498a-8b71-b257002864ca",
+      "name": "Wait 30 Sec2",
+      "webhookId": "23d42838-110d-4fff-8f50-13a59ed0f69c"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.data.state }}",
+                    "rightValue": "success",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "state-success"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "success"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "state-waiting",
+                    "leftValue": "={{ $json.data.state }}",
+                    "rightValue": "waiting",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "generating"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "state-fail",
+                    "leftValue": "={{ $json.data.state }}",
+                    "rightValue": "fail",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "fail"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        320,
+        832
+      ],
+      "id": "bacfe18f-1923-48fd-add9-2fdce5adcd9f",
+      "name": "Switch2"
+    },
+    {
+      "parameters": {
+        "url": "https://api.kie.ai/api/v1/jobs/recordInfo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "taskId",
+              "value": "={{ $json.data.taskId }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_TOKEN"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        80,
+        848
+      ],
+      "id": "f7825d31-c5b1-4be7-a5cc-185c40e5d519",
+      "name": "Get Generated Image URL1",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "InGhHGhacqFAcJvw",
+          "name": "kie.ai"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        576,
+        1392
+      ],
+      "id": "c67179b8-9928-4717-b24b-965e67a94b0e",
+      "name": "No Operation, do nothing1"
+    },
+    {
+      "parameters": {
+        "content": "\n\"content\": \n\"A profile shot of a silver luxury convertible parked on a flat surface next to a calm body of water that creates a clear reflection of the car. The car features a long hood, a dark soft top, and large five-spoke alloy wheels with a dark finish. The body of the vehicle is a metallic silver color that transitions into a darker shade along the bottom trim. The passenger side is facing the viewer, showing a sleek, aerodynamic silhouette. The background is a bright, hazy sky with no distinct clouds or landmarks, creating a minimalist aesthetic. The water in the foreground shows ripples and a reflection of the car's wheels and chassis. There is no typography or text present in the image. The layout is centered on the car, which spans most of the horizontal frame, with the upper half of the image occupied by the car and sky, and the lower half occupied by the reflection in the water.\",",
+        "height": 368
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        0,
+        96
+      ],
+      "typeVersion": 1,
+      "id": "716725a8-cb2c-484e-a96f-dd15b29545b0",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "  \"model\": \"google/gemma-4-26b-a4b-it:free\",",
+        "height": 80,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        0,
+        0
+      ],
+      "typeVersion": 1,
+      "id": "2be4313c-9b8f-4bdd-b894-0f2cd6735ab1",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "  \"model\": \"google/gemini-3.1-flash-image\",",
+        "height": 80,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        256,
+        0
+      ],
+      "typeVersion": 1,
+      "id": "6c8035c9-456b-482a-891f-630e61ef698b",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "\"content\": \n\"{\\n  \\\"image_prompt\\\": \\\"A professional 3D graphic t-shirt mockup featuring a minimalist black cotton tee, presented front-on. Centered as a high-quality, DTG print is the detailed illustration of the luxury convertible car, exactly as described: side profile, two-tone white and black body, large multi-spoke wheels, silver grille and hood ornament. The car is positioned on a light, flat surface with a prominent foreground water reflection showing the underside, set against a hazy, minimalist landscape and pale sky. The lighting is soft and even daylight, highlighting the photographic detail of the print against the realistic fabric texture, creases, and rib-knit collar. No text is present; the composition is balanced.\\\"\\nlayout is clean and balanced.\\\"\\n}\",",
+        "height": 368
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        256,
+        96
+      ],
+      "typeVersion": 1,
+      "id": "14edbcf3-62f8-442d-b451-f141f15fd9b9",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.kie.ai/api/v1/veo/generate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_TOKEN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"{{ $json.model }}\",\n  \"prompt\": {{ JSON.stringify($json.video_prompt) }},\n  \"imageUrls\": [\n    \"{{ $json.image_url }}\"\n  ],\n  \"aspect_ratio\": \"{{ $json.aspect_ratio }}\",\n  \"resolution\": \"{{ $json.resolution }}\",\n  \"generationType\": \"{{ $json.generationType }}\",\n  \"duration\": \"8\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -656,
+        1248
+      ],
+      "id": "5dc905e4-9ed7-434a-a572-b7defe3430b1",
+      "name": "Generate Video - Veo ",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "InGhHGhacqFAcJvw",
+          "name": "kie.ai"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fields": {
+          "values": [
+            {
+              "name": "video_prompt",
+              "stringValue": "Create a cinematic advert with dramatic lighting, slow motion, urban night setting, neon reflections on wet asphalt, drifting car, smoke, sparks"
+            },
+            {
+              "name": "image_url",
+              "stringValue": "={{ JSON.parse($('Get Generated Image URL1').item.json.data.resultJson).resultUrls[0] }}"
+            },
+            {
+              "name": "model",
+              "stringValue": "veo3_lite"
+            },
+            {
+              "name": "aspect_ratio",
+              "stringValue": "16:9"
+            },
+            {
+              "name": "resolution",
+              "stringValue": "1080p"
+            },
+            {
+              "name": "generationType",
+              "stringValue": "REFERENCE_2_VIDEO"
+            },
+            {
+              "name": "duration",
+              "stringValue": "10 sec"
+            }
+          ]
+        },
+        "include": "none",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [
+        -1072,
+        1248
+      ],
+      "id": "3b3b8cc8-c879-4618-95b2-9c213eeb0e23",
+      "name": "Video Input1"
+    },
+    {
+      "parameters": {
+        "content": "{\n  \"model\": \"veo3_lite\",\n  \"prompt\": \"Create a cinematic hip-hop car advert with dramatic lighting, slow motion, urban night setting, neon reflections on wet asphalt, drifting car, smoke, sparks\",\n  \"imageUrls\": [\n    \"https://tempfile.aiquickdraw.com/workers/images/image_1782815319085_jxy3mx.png\"\n  ],\n  \"aspect_ratio\": \"16:9\",\n  \"resolution\": \"1080p\",\n  \"generationType\": \"REFERENCE_2_VIDEO\",\n  \"duration\": \"8\"\n}",
+        "width": 320,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -560,
+        1088
+      ],
+      "typeVersion": 1,
+      "id": "77aca0db-68a7-43c7-8479-6a071d89a06f",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/botYOUR_BOT_TOKEN/sendVideo",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $('Parse ART Command').item.json.chat_id }}"
+            },
+            {
+              "name": "business_connection_id",
+              "value": "={{ $('Parse ART Command').item.json.business_connection_id }}"
+            },
+            {
+              "name": "reply_to_message_id",
+              "value": "={{ $('Parse ART Command').item.json.message_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"video\": \"{{ $json.data.response.originUrls[0] }}\",\n  \"caption\": \"PocketAgent\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        576,
+        1216
+      ],
+      "id": "1705dad9-bbf6-4049-8d18-5dee5ddb7c65",
+      "name": "Send Video"
+    },
+    {
+      "parameters": {
+        "content": "https://api.imgbb.com/1/upload?key=YOUR_KEY",
+        "height": 80,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -304,
+        384
+      ],
+      "typeVersion": 1,
+      "id": "0b9b0cd8-4a98-425d-91ea-463e25313c6a",
+      "name": "Sticky Note5"
+    },
+    {
+      "parameters": {
+        "content": "## Create profile with imgbb.com\n\nCreate your API key here\nhttps://api.imgbb.com/",
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -304,
+        192
+      ],
+      "typeVersion": 1,
+      "id": "0277c906-df58-4e74-8d80-f1fedb3138bd",
+      "name": "Sticky Note6"
+    },
+    {
+      "parameters": {
+        "content": "https://openrouter.ai/workspaces/default/keys\n\nCreate API KEY",
+        "height": 96,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        128,
+        -112
+      ],
+      "typeVersion": 1,
+      "id": "f6d58e33-d50e-4458-95e0-d8830b4afb63",
+      "name": "Sticky Note7"
+    },
+    {
+      "parameters": {
+        "content": "https://kie.ai/pricing\n\nEach Account receives 50 credits for tests per day\n\n1 video costs $0.175\n1 image with NanoBanana 2 costs $0.04\n\nTotal Spent: 43 Credits\nUSD price: $0.215",
+        "height": 208,
+        "width": 336,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -560,
+        688
+      ],
+      "typeVersion": 1,
+      "id": "239f8532-c634-4b18-994a-5eeecce0fdb2",
+      "name": "Sticky Note8"
+    },
+    {
+      "parameters": {
+        "content": "## VIDEO",
+        "height": 384,
+        "width": 2000,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1200,
+        1168
+      ],
+      "typeVersion": 1,
+      "id": "8d0464e8-c4e9-4ab8-a82d-e8cb31bcadb7",
+      "name": "Sticky Note10"
+    },
+    {
+      "parameters": {
+        "content": "## ART",
+        "height": 384,
+        "width": 2000,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1200,
+        752
+      ],
+      "typeVersion": 1,
+      "id": "64631c78-f707-4f73-9028-e53ee0415d43",
+      "name": "Sticky Note11"
+    },
+    {
+      "parameters": {
+        "content": "## ANALYZE COMMAND AND PICTURE FROM USER",
+        "height": 384,
+        "width": 2000,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1200,
+        336
+      ],
+      "typeVersion": 1,
+      "id": "e9db0cd9-9a6e-44f9-8e8d-0fe71f5feaf5",
+      "name": "Sticky Note12"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Wait 30 Sec1": {
+      "main": [
+        [
+          {
+            "node": "Get Generated Video URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Generated Video URL": {
+      "main": [
+        [
+          {
+            "node": "Switch1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch1": {
+      "main": [
+        [
+          {
+            "node": "Send Video",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait 30 Sec1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Parse ART Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse ART Command": {
+      "main": [
+        [
+          {
+            "node": "Get File TG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Image URL": {
+      "main": [
+        [
+          {
+            "node": "Analyze image AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get File TG": {
+      "main": [
+        [
+          {
+            "node": "Download File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download File": {
+      "main": [
+        [
+          {
+            "node": "Get Image URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze image AI": {
+      "main": [
+        [
+          {
+            "node": "Generate Image Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Image Prompt": {
+      "main": [
+        [
+          {
+            "node": "Delete AI Bullshit md",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Image Input": {
+      "main": [
+        [
+          {
+            "node": "Generate Image - Nano Banana ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Image": {
+      "main": [
+        [
+          {
+            "node": "Video Input1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete AI Bullshit md": {
+      "main": [
+        [
+          {
+            "node": "Image Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Image - Nano Banana ": {
+      "main": [
+        [
+          {
+            "node": "Wait 30 Sec2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 30 Sec2": {
+      "main": [
+        [
+          {
+            "node": "Get Generated Image URL1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch2": {
+      "main": [
+        [
+          {
+            "node": "Send Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait 30 Sec2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Generated Image URL1": {
+      "main": [
+        [
+          {
+            "node": "Switch2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Video - Veo ": {
+      "main": [
+        [
+          {
+            "node": "Wait 30 Sec1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Video Input1": {
+      "main": [
+        [
+          {
+            "node": "Generate Video - Veo ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "d5bcf2e9-a4e3-4e48-a741-8bd6c8c38b8f",
+  "meta": {
+    "instanceId": "148b2b278c24b3c49bc4399db7e7ce15ed94f5b1044d28401c56f6ab511f0347"
+  },
+  "id": "waho4ioEyDD5qeyK",
+  "tags": []
+}
